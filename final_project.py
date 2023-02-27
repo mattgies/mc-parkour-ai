@@ -84,7 +84,7 @@ def GetMissionXML(summary=""):
                 <FlatWorldGenerator generatorString="3;7,220*1,5*3,2;3;,biome_1" />
                 <DrawingDecorator>
                     <!--Draw shapes/blocks here. List of commands at https://microsoft.github.io/malmo/0.21.0/Schemas/MissionHandlers.html#element_DrawBlock -->
-
+                    <DrawBlock x="5" y="226" z="5" type="diamond_block"/>
                 </DrawingDecorator>
                 <ServerQuitWhenAnyAgentFinishes />
             </ServerHandlers>
@@ -205,7 +205,9 @@ def training_loop():
 
 
 # Create default Malmo objects:
-
+expected_reward = 3390
+my_client_pool = MalmoPython.ClientPool()
+my_client_pool.add(MalmoPython.ClientInfo("127.0.0.1", 10000))
 agent_host = MalmoPython.AgentHost()
 try:
     agent_host.parse( sys.argv )
@@ -224,7 +226,7 @@ my_mission_record = MalmoPython.MissionRecordSpec()
 max_retries = 3
 for retry in range(max_retries):
     try:
-        agent_host.startMission( my_mission, my_mission_record )
+        agent_host.startMission( my_mission, my_client_pool, my_mission_record, 0, "myExperimentString" )
         break
     except RuntimeError as e:
         if retry == max_retries - 1:
