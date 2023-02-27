@@ -1,6 +1,8 @@
 import numpy as np
 import MalmoPython
 import tensorflow as tf
+import os
+import sys
 import time
 
 x = tf.constant(4)
@@ -56,6 +58,67 @@ episode_number = 0
 
 
 # functions
+def GetMissionXML(summary=""):
+    ''' Build an XML mission string. '''
+
+    return '''<?xml version="1.0" encoding="UTF-8" ?>
+    <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+        <About>
+            <Summary>Super cool parkour bot!</Summary>
+        </About>
+
+        <ModSettings>
+            <MsPerTick>50</MsPerTick>
+        </ModSettings>
+
+        <ServerSection>
+            <ServerInitialConditions>
+                <Time>
+                    <StartTime>6000</StartTime>
+                    <AllowPassageOfTime>false</AllowPassageOfTime>
+                </Time>
+                <Weather>clear</Weather>
+                <AllowSpawning>false</AllowSpawning>
+            </ServerInitialConditions>
+            <ServerHandlers>
+                <FlatWorldGenerator generatorString="3;7,220*1,5*3,2;3;,biome_1" />
+                <DrawingDecorator>
+                    <!--Draw shapes/blocks here. List of commands at https://microsoft.github.io/malmo/0.21.0/Schemas/MissionHandlers.html#element_DrawBlock -->
+
+                </DrawingDecorator>
+                <ServerQuitWhenAnyAgentFinishes />
+            </ServerHandlers>
+        </ServerSection>
+
+        <AgentSection mode="Survival">
+            <Name>ParkourPeter</Name>
+            <AgentStart>
+                <Placement x="0.5" y="227.0" z="0.5"/>
+                <Inventory>
+                    <InventoryItem slot="9" type="planks" variant="acacia"/>
+                    <InventoryItem slot="10" type="brown_mushroom"/>
+                    <InventoryItem slot="11" type="planks" variant="spruce"/>
+                    <InventoryItem slot="12" type="brown_mushroom"/>
+                </Inventory>
+            </AgentStart>
+            <AgentHandlers>
+                <ContinuousMovementCommands turnSpeedDegs="480"/>
+                <AbsoluteMovementCommands/>
+                <SimpleCraftCommands/>
+                <MissionQuitCommands/>
+                <InventoryCommands/>
+                <ObservationFromNearbyEntities>
+                    <Range name="entities" xrange="40" yrange="40" zrange="40"/>
+                </ObservationFromNearbyEntities>
+                <ObservationFromFullInventory/>
+                <AgentQuitFromCollectingItem>
+                    <Item type="rabbit_stew" description="Supper's Up!!"/>
+                </AgentQuitFromCollectingItem>
+            </AgentHandlers>
+        </AgentSection>
+
+    </Mission>'''
+
 def create_model():
     pass
 
@@ -140,6 +203,48 @@ def training_loop():
             if episode_done:
                 break
 
+
+# Create default Malmo objects:
+
+agent_host = MalmoPython.AgentHost()
+try:
+    agent_host.parse( sys.argv )
+except RuntimeError as e:
+    print('ERROR:',e)
+    print(agent_host.getUsage())
+    exit(1)
+if agent_host.receivedArgument("help"):
+    print(agent_host.getUsage())
+    exit(0)
+
+my_mission = MalmoPython.MissionSpec(GetMissionXML(), True)
+my_mission_record = MalmoPython.MissionRecordSpec()
+
+# Attempt to start a mission:
+max_retries = 3
+for retry in range(max_retries):
+    try:
+        agent_host.startMission( my_mission, my_mission_record )
+        break
+    except RuntimeError as e:
+        if retry == max_retries - 1:
+            print("Error starting mission:",e)
+            exit(1)
+        else:
+            time.sleep(2)
+
+# Loop until mission starts:
+print("Waiting for the mission to start ", end=' ')
+world_state = agent_host.getWorldState()
+while not world_state.has_mission_begun:
+    print(".", end="")
+    time.sleep(0.1)
+    world_state = agent_host.getWorldState()
+    for error in world_state.errors:
+        print("Error:",error.text)
+
+print()
+print("Mission running ", end=' ')
 
 time.sleep(5)
 
