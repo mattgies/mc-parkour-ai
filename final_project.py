@@ -248,5 +248,13 @@ while not world_state.has_mission_begun:
 print()
 print("Mission running ", end=' ')
 
+agent_host.sendCommand("move 2")
+time.sleep(2)
+world_state = agent_host.getWorldState()
+import json
+import copy
+x = copy.deepcopy(world_state.observations[0].text)
+print(json.loads(x)["entities"][0]["motionZ"])
+
 time.sleep(5)
 
