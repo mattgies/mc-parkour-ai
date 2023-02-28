@@ -1,6 +1,13 @@
+from __future__ import print_function
+from future import standard_library
+standard_library.install_aliases()
+from builtins import range
+from builtins import object
 import numpy as np
 import MalmoPython
 import tensorflow as tf
+import json
+import copy
 import os
 import sys
 import time
@@ -61,7 +68,7 @@ episode_number = 0
 def GetMissionXML(summary=""):
     ''' Build an XML mission string. '''
 
-    return '''<?xml version="1.0" encoding="UTF-8" ?>
+    return '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
     <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
         <About>
             <Summary>Super cool parkour bot!</Summary>
@@ -94,12 +101,6 @@ def GetMissionXML(summary=""):
             <Name>ParkourPeter</Name>
             <AgentStart>
                 <Placement x="0.5" y="227.0" z="0.5"/>
-                <Inventory>
-                    <InventoryItem slot="9" type="planks" variant="acacia"/>
-                    <InventoryItem slot="10" type="brown_mushroom"/>
-                    <InventoryItem slot="11" type="planks" variant="spruce"/>
-                    <InventoryItem slot="12" type="brown_mushroom"/>
-                </Inventory>
             </AgentStart>
             <AgentHandlers>
                 <ContinuousMovementCommands turnSpeedDegs="480"/>
@@ -107,6 +108,7 @@ def GetMissionXML(summary=""):
                 <SimpleCraftCommands/>
                 <MissionQuitCommands/>
                 <InventoryCommands/>
+                <ObservationFromFullStats/>
                 <ObservationFromNearbyEntities>
                     <Range name="entities" xrange="40" yrange="40" zrange="40"/>
                 </ObservationFromNearbyEntities>
@@ -251,10 +253,18 @@ print("Mission running ", end=' ')
 agent_host.sendCommand("move 2")
 time.sleep(2)
 world_state = agent_host.getWorldState()
-import json
-import copy
 x = copy.deepcopy(world_state.observations[0].text)
 print(json.loads(x)["entities"][0]["motionZ"])
+
+obs_text = world_state.observations[-1].text
+obs = json.loads(obs_text) # most recent observation
+print(obs)
+if not u'XPos' in obs or not u'ZPos' in obs:
+    print("Does not exist")
+else:
+    current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
+    print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'ZPos']), float(obs[u'ZPos'])))
+    print("Direction vector: (x = %.2f, y = %.2f, z = %.2f" % (float(obs[u'entities'][0][u'motionX']), float(obs[u'entities'][0][u'motionY']), float(obs[u'entities'][0][u'motionZ'])))
 
 time.sleep(5)
 
