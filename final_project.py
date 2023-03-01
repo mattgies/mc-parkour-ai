@@ -200,12 +200,11 @@ def is_grounded(observations, nearby_blocks):
     """
     returns: bool: true if touching ground
     """
-    # TODO: Make this use variables or something
-    # TODO: Also make own "IsClose" function for float math stuff
+    # TODO: Make own "IsClose" function for float math stuff
     grid = observations.get(u'floor5x5x2')  
     player_height = float(observations[u'YPos'])
     player_height_rounded = int(player_height)
-    block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)]
+    block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)] # TODO: Make this use variables or something
     return block_name_below_player != "lava" and block_name_below_player != "air" and (abs(player_height - player_height_rounded) <= 0.01)
     
 
@@ -338,48 +337,14 @@ while not world_state.has_mission_begun:
 print()
 print("Mission running ", end=' ')
 
-agent_host.sendCommand("move 2")
-agent_host.sendCommand("jump 1")
 time.sleep(1)
-# x = copy.deepcopy(world_state.observations[0].text)
-# print(json.loads(x)["entities"][0]["motionZ"])
-
-world_state = agent_host.getWorldState()
-obs_text = world_state.observations[-1].text
-obs = json.loads(obs_text) # most recent observation
-if not u'XPos' in obs or not u'ZPos' in obs:
-    print("Does not exist")
-else:
-    current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
-    print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos'])))
-    print("Direction vector: (x = %.2f, y = %.2f, z = %.2f" % (float(obs[u'entities'][0][u'motionX']), float(obs[u'entities'][0][u'motionY']), float(obs[u'entities'][0][u'motionZ'])))
-
-# Get grid observations
-blocks = get_nearby_walkable_blocks(obs)
-for b in blocks:
-    if b.name == "diamond_block":
-        player_position_vector = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
-        direction_vector = b.position() - player_position_vector
-        print("Magnitude:", direction_vector.magnitude(), "| Direction:", direction_vector.direction())
-
-# Grounded check
-print(is_grounded(obs, blocks))
-
-# Facing direction. Doesn't need to look up or down
-print(obs[u'Yaw'])
-
-"""
-Model inputs:
-- X Direction vector to nearest new block
-- X IsGrounded
-- Velocity vector
-- Direction facing
-"""
-
-time.sleep(1)
-previous_update_position = Vector(0.0, 0.0, 0.0) # Where the player was last update
 
 # Simulate running for a few seconds
+prev_agent_position = Vector(0.5, 227.0, 0.5) # Where the player was last update
+
+agent_host.sendCommand("move 2")
+agent_host.sendCommand("jump 1")
+agent_host.sendCommand("turn 1")
 for update_num in range(80):
     print("Update num:", update_num)
 
@@ -389,22 +354,30 @@ for update_num in range(80):
     world_state = agent_host.getWorldState()
     obs_text = world_state.observations[-1].text
     obs = json.loads(obs_text) # most recent observation
+    # Can check if observation doesn't contain necessary data.
+    if not u'XPos' in obs or not u'ZPos' in obs:
+        print("Does not exist")
+    # else:
+    #     current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
+    #     print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos'])))
+    #     print("Direction vector: (x = %.2f, y = %.2f, z = %.2f" % (float(obs[u'entities'][0][u'motionX']), float(obs[u'entities'][0][u'motionY']), float(obs[u'entities'][0][u'motionZ'])))
+
+    # Where agent is this update.
+    agent_position = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
 
     # Get grid observations
     blocks = get_nearby_walkable_blocks(obs)
     for b in blocks:
         if b.name == "diamond_block":
-            player_position_vector = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
-            direction_vector = b.position() - player_position_vector
+            direction_vector = b.position() - agent_position
             print("Magnitude:", direction_vector.magnitude(), "| Direction:", direction_vector.direction())
 
     # Grounded check
     print("Is grounded:", is_grounded(obs, blocks))
 
     # Velocity vector
-    player_position_vector = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
-    print("Velocity:", player_position_vector - previous_update_position)
-    previous_update_position = player_position_vector
+    print("Velocity:", agent_position - prev_agent_position)
+    prev_agent_position = agent_position
 
     # Facing direction. Doesn't need to look up or down
     print("Look direction:", obs[u'Yaw'])
