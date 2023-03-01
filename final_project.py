@@ -12,6 +12,13 @@ import copy
 import os
 import sys
 import time
+from mcpi import minecraft
+
+# import xmlgen
+# from parkourcourse1 import *
+mc = minecraft.Minecraft.create("127.0.0.1", 10000)
+# xmlgen(CUBE_COORDS)
+stepped_on_blocks = {Block()}
 
 x = tf.constant(4)
 for i in range(5):
@@ -79,8 +86,8 @@ class Block:
         return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + "|" + self.name + ")"
 
     def __eq__(self, other):
-        return self.x == other.x and self.y == other.y and self.z == other.z
-    
+        return self.x == other.x and self.y == other.y and self.z == other.z\
+            
     def position(self) -> "Vector":
         return Vector(self.x, self.y, self.z)
     
@@ -342,9 +349,10 @@ time.sleep(1)
 # Simulate running for a few seconds
 prev_agent_position = Vector(0.5, 227.0, 0.5) # Where the player was last update
 
-agent_host.sendCommand("move 2")
-agent_host.sendCommand("jump 1")
-agent_host.sendCommand("turn 1")
+# agent_host.sendCommand("move 100")
+# agent_host.sendCommand("jump 1")
+# agent_host.sendCommand("turn 1")
+
 for update_num in range(80):
     print("Update num:", update_num)
 
