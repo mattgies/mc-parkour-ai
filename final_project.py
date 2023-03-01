@@ -338,13 +338,13 @@ while not world_state.has_mission_begun:
 print()
 print("Mission running ", end=' ')
 
-# agent_host.sendCommand("move 2")
-# agent_host.sendCommand("jump 1")
+agent_host.sendCommand("move 2")
+agent_host.sendCommand("jump 1")
 time.sleep(1)
-world_state = agent_host.getWorldState()
 # x = copy.deepcopy(world_state.observations[0].text)
 # print(json.loads(x)["entities"][0]["motionZ"])
 
+world_state = agent_host.getWorldState()
 obs_text = world_state.observations[-1].text
 obs = json.loads(obs_text) # most recent observation
 if not u'XPos' in obs or not u'ZPos' in obs:
@@ -355,17 +355,61 @@ else:
     print("Direction vector: (x = %.2f, y = %.2f, z = %.2f" % (float(obs[u'entities'][0][u'motionX']), float(obs[u'entities'][0][u'motionY']), float(obs[u'entities'][0][u'motionZ'])))
 
 # Get grid observations
-observations = json.loads(world_state.observations[-1].text)
-blocks = get_nearby_walkable_blocks(observations)
+blocks = get_nearby_walkable_blocks(obs)
 for b in blocks:
-    print(b)
     if b.name == "diamond_block":
         player_position_vector = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
         direction_vector = b.position() - player_position_vector
         print("Magnitude:", direction_vector.magnitude(), "| Direction:", direction_vector.direction())
 
 # Grounded check
-print(is_grounded(observations, blocks))
+print(is_grounded(obs, blocks))
 
-time.sleep(5)
+# Facing direction. Doesn't need to look up or down
+print(obs[u'Yaw'])
+
+"""
+Model inputs:
+- X Direction vector to nearest new block
+- X IsGrounded
+- Velocity vector
+- Direction facing
+"""
+
+time.sleep(1)
+previous_update_position = Vector(0.0, 0.0, 0.0) # Where the player was last update
+
+# Simulate running for a few seconds
+for update_num in range(80):
+    print("Update num:", update_num)
+
+    # TODO: Could do try/catch and skip this loop if it gives an out of bounds exception.
+    # NOTE: Getting the observations multiple times on the same frame most likely causes the out of bounds exception.
+    # Get agent observations for this update.
+    world_state = agent_host.getWorldState()
+    obs_text = world_state.observations[-1].text
+    obs = json.loads(obs_text) # most recent observation
+
+    # Get grid observations
+    blocks = get_nearby_walkable_blocks(obs)
+    for b in blocks:
+        if b.name == "diamond_block":
+            player_position_vector = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
+            direction_vector = b.position() - player_position_vector
+            print("Magnitude:", direction_vector.magnitude(), "| Direction:", direction_vector.direction())
+
+    # Grounded check
+    print("Is grounded:", is_grounded(obs, blocks))
+
+    # Velocity vector
+    player_position_vector = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
+    print("Velocity:", player_position_vector - previous_update_position)
+    previous_update_position = player_position_vector
+
+    # Facing direction. Doesn't need to look up or down
+    print("Look direction:", obs[u'Yaw'])
+
+    time.sleep(0.05)
+
+time.sleep(1)
 
