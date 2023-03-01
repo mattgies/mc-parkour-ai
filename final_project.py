@@ -4,6 +4,7 @@ standard_library.install_aliases()
 from builtins import range
 from builtins import object
 import numpy as np
+import math
 import MalmoPython
 import tensorflow as tf
 import json
@@ -68,10 +69,10 @@ class Block:
     """
     Stores information about a Minecraft block.
     """
-    def __init__(self, x, z, y, name):
+    def __init__(self, x, y, z, name):
         self.x = x
-        self.z = z
         self.y = y
+        self.z = z
         self.name = name
 
     def __str__(self):
@@ -79,6 +80,35 @@ class Block:
 
     def __eq__(self, other):
         return self.x == other.x and self.y == other.y and self.z == other.z
+    
+    def position(self) -> "Vector":
+        return Vector(self.x, self.y, self.z)
+    
+
+class Vector:
+    """
+    Stores a 3D vector.
+    """
+    def __init__(self, x, y, z) -> None:
+        self.x = x
+        self.y = y
+        self.z = z
+
+    def __str__(self) -> str:
+        return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + ")"
+
+    def __sub__(self, other) -> "Vector":
+        return Vector(self.x - other.x, self.y - other.y, self.z - other.z)
+
+    def __eq__(self, other) -> bool:
+        return self.x == other.x and self.y == other.y and self.z == other.z
+    
+    def magnitude(self) -> float:
+        return math.sqrt((self.x ** 2) + (self.y ** 2) + (self.z ** 2))
+    
+    def direction(self) -> "Vector":
+        mag = self.magnitude()
+        return Vector(self.x / mag, self.y / mag, self.z / mag)
 
 
 # functions
@@ -153,7 +183,7 @@ def get_nearby_walkable_blocks(observations):
     returns: list of Block
     """
     grid = observations.get(u'floor5x5x2')  
-    player_location = [int(observations[u'XPos']), int(observations[u'ZPos']), int(observations[u'YPos'])]
+    player_location = [int(observations[u'XPos']), int(observations[u'YPos']), int(observations[u'ZPos'])]
     result = []
     # TODO: Make these variables
     i = 0
@@ -161,7 +191,7 @@ def get_nearby_walkable_blocks(observations):
         for z in range(-2, 2 + 1):
             for y in range(-1, 0 + 1):
                 if grid[i] != "air" and grid[i] != "lava":
-                    result.append(Block(player_location[0]+x, player_location[1]+z, player_location[2]+y, grid[i]))
+                    result.append(Block(player_location[0]+x, player_location[1]+y, player_location[2]+z, grid[i]))
                 i += 1
     return result
 
@@ -309,7 +339,7 @@ print()
 print("Mission running ", end=' ')
 
 # agent_host.sendCommand("move 2")
-agent_host.sendCommand("jump 1")
+# agent_host.sendCommand("jump 1")
 time.sleep(1)
 world_state = agent_host.getWorldState()
 # x = copy.deepcopy(world_state.observations[0].text)
@@ -329,6 +359,10 @@ observations = json.loads(world_state.observations[-1].text)
 blocks = get_nearby_walkable_blocks(observations)
 for b in blocks:
     print(b)
+    if b.name == "diamond_block":
+        player_position_vector = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
+        direction_vector = player_position_vector - b.position()
+        print("Magnitude:", direction_vector.magnitude(), "| Direction:", direction_vector.direction())
 
 # Grounded check
 print(is_grounded(observations, blocks))
