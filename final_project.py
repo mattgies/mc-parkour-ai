@@ -14,11 +14,11 @@ import sys
 import time
 from mcpi import minecraft
 
-# import xmlgen
+import xmlgen
 # from parkourcourse1 import *
 mc = minecraft.Minecraft.create("127.0.0.1", 10000)
 # xmlgen(CUBE_COORDS)
-stepped_on_blocks = {Block()}
+# stepped_on_blocks = {Block()}
 
 x = tf.constant(4)
 for i in range(5):
@@ -120,67 +120,7 @@ class Vector:
 
 # functions
 def GetMissionXML(summary=""):
-    ''' Build an XML mission string. '''
-
-    return '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-    <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-        <About>
-            <Summary>Super cool parkour bot!</Summary>
-        </About>
-
-        <ModSettings>
-            <MsPerTick>50</MsPerTick>
-        </ModSettings>
-
-        <ServerSection>
-            <ServerInitialConditions>
-                <Time>
-                    <StartTime>6000</StartTime>
-                    <AllowPassageOfTime>false</AllowPassageOfTime>
-                </Time>
-                <Weather>clear</Weather>
-                <AllowSpawning>false</AllowSpawning>
-            </ServerInitialConditions>
-            <ServerHandlers>
-                <FlatWorldGenerator generatorString="3;7,220*1,5*3,2;3;,biome_1" />
-                <DrawingDecorator>
-                    <!--Draw shapes/blocks here. List of commands at https://microsoft.github.io/malmo/0.21.0/Schemas/MissionHandlers.html#element_DrawBlock -->
-                    <DrawBlock x="2" y="226" z="2" type="diamond_block"/>
-                </DrawingDecorator>
-                <ServerQuitWhenAnyAgentFinishes />
-            </ServerHandlers>
-        </ServerSection>
-
-        <AgentSection mode="Survival">
-            <Name>ParkourPeter</Name>
-            <AgentStart>
-                <Placement x="0.5" y="227.0" z="0.5"/>
-            </AgentStart>
-            <AgentHandlers>
-                <ContinuousMovementCommands turnSpeedDegs="480"/>
-                <AbsoluteMovementCommands/>
-                <SimpleCraftCommands/>
-                <MissionQuitCommands/>
-                <InventoryCommands/>
-                <ObservationFromFullStats/>
-                <ObservationFromGrid>
-                    <!-- Observe blocks that are below and at leg-level of the agent. -->
-                    <Grid name="floor5x5x2">
-                        <min x="-2" y="-1" z="-2"/>
-                        <max x="2" y="0" z="2"/>
-                    </Grid>
-                </ObservationFromGrid>
-                <ObservationFromNearbyEntities>
-                    <Range name="entities" xrange="40" yrange="40" zrange="40"/>
-                </ObservationFromNearbyEntities>
-                <ObservationFromFullInventory/>
-                <AgentQuitFromCollectingItem>
-                    <Item type="rabbit_stew" description="Supper's Up!!"/>
-                </AgentQuitFromCollectingItem>
-            </AgentHandlers>
-        </AgentSection>
-
-    </Mission>'''
+    return xmlgen.XMLGenerator([])
 
 def get_nearby_walkable_blocks(observations):
     """
