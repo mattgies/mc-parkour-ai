@@ -63,6 +63,20 @@ episode_number = 0
 
 # loss_func = tf.keras.losses.MSE()
 
+# Classes
+class Block:
+    """
+    Stores information about a Minecraft block.
+    """
+    def __init__(self, x, z, y, name):
+        self.x = x
+        self.z = z
+        self.y = y
+        self.name = name
+
+    def __str__(self):
+        return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + "|" + self.name + ")"
+
 
 # functions
 def GetMissionXML(summary=""):
@@ -91,7 +105,7 @@ def GetMissionXML(summary=""):
                 <FlatWorldGenerator generatorString="3;7,220*1,5*3,2;3;,biome_1" />
                 <DrawingDecorator>
                     <!--Draw shapes/blocks here. List of commands at https://microsoft.github.io/malmo/0.21.0/Schemas/MissionHandlers.html#element_DrawBlock -->
-                    <DrawBlock x="0" y="226" z="2" type="diamond_block"/>
+                    <DrawBlock x="2" y="226" z="2" type="diamond_block"/>
                 </DrawingDecorator>
                 <ServerQuitWhenAnyAgentFinishes />
             </ServerHandlers>
@@ -127,6 +141,29 @@ def GetMissionXML(summary=""):
         </AgentSection>
 
     </Mission>'''
+
+def get_nearby_walkable_blocks(observations):
+    """
+    Returns list of blocks near the agent that can be walked on
+    (not air or lava)
+
+    returns: list of Block
+    """
+    grid = observations.get(u'floor5x5x2')  
+    player_location = [int(observations[u'XPos']), int(observations[u'ZPos']), int(observations[u'YPos'])]
+    print(grid)
+    print(player_location)
+    result = []
+    # TODO: Make these variables
+    i = 0
+    for x in range(-2, 2 + 1):
+        for z in range(-2, 2 + 1):
+            for y in range(-1, 0 + 1):
+                if grid[i] != "air" and grid[i] != "lava":
+                    result.append(Block(player_location[0]+x, player_location[1]+z, player_location[2]+y, grid[i]))
+                i += 1
+    return result
+    
 
 def create_model():
     pass
@@ -274,8 +311,10 @@ else:
 
 # Get grid observations
 observations = json.loads(world_state.observations[-1].text)
-grid = observations.get(u'floor5x5x2')  
-print(grid)
+blocks = get_nearby_walkable_blocks(observations)
+# print(blocks)
+for b in blocks:
+    print(b)
 
 time.sleep(5)
 
