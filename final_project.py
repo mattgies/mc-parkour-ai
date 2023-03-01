@@ -91,7 +91,7 @@ def GetMissionXML(summary=""):
                 <FlatWorldGenerator generatorString="3;7,220*1,5*3,2;3;,biome_1" />
                 <DrawingDecorator>
                     <!--Draw shapes/blocks here. List of commands at https://microsoft.github.io/malmo/0.21.0/Schemas/MissionHandlers.html#element_DrawBlock -->
-                    <DrawBlock x="5" y="226" z="5" type="diamond_block"/>
+                    <DrawBlock x="0" y="226" z="2" type="diamond_block"/>
                 </DrawingDecorator>
                 <ServerQuitWhenAnyAgentFinishes />
             </ServerHandlers>
@@ -109,6 +109,13 @@ def GetMissionXML(summary=""):
                 <MissionQuitCommands/>
                 <InventoryCommands/>
                 <ObservationFromFullStats/>
+                <ObservationFromGrid>
+                    <!-- Observe blocks that are below and at leg-level of the agent. -->
+                    <Grid name="floor5x5x2">
+                        <min x="-2" y="-1" z="-2"/>
+                        <max x="2" y="0" z="2"/>
+                    </Grid>
+                </ObservationFromGrid>
                 <ObservationFromNearbyEntities>
                     <Range name="entities" xrange="40" yrange="40" zrange="40"/>
                 </ObservationFromNearbyEntities>
@@ -250,21 +257,25 @@ while not world_state.has_mission_begun:
 print()
 print("Mission running ", end=' ')
 
-agent_host.sendCommand("move 2")
-time.sleep(2)
+# agent_host.sendCommand("move 2")
+time.sleep(1)
 world_state = agent_host.getWorldState()
-x = copy.deepcopy(world_state.observations[0].text)
-print(json.loads(x)["entities"][0]["motionZ"])
+# x = copy.deepcopy(world_state.observations[0].text)
+# print(json.loads(x)["entities"][0]["motionZ"])
 
 obs_text = world_state.observations[-1].text
 obs = json.loads(obs_text) # most recent observation
-print(obs)
 if not u'XPos' in obs or not u'ZPos' in obs:
     print("Does not exist")
 else:
     current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
     print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'ZPos']), float(obs[u'ZPos'])))
     print("Direction vector: (x = %.2f, y = %.2f, z = %.2f" % (float(obs[u'entities'][0][u'motionX']), float(obs[u'entities'][0][u'motionY']), float(obs[u'entities'][0][u'motionZ'])))
+
+# Get grid observations
+observations = json.loads(world_state.observations[-1].text)
+grid = observations.get(u'floor5x5x2')  
+print(grid)
 
 time.sleep(5)
 
