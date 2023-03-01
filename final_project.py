@@ -187,9 +187,9 @@ def get_nearby_walkable_blocks(observations):
     result = []
     # TODO: Make these variables
     i = 0
-    for x in range(-2, 2 + 1):
+    for y in range(-1, 0 + 1):
         for z in range(-2, 2 + 1):
-            for y in range(-1, 0 + 1):
+            for x in range(-2, 2 + 1):
                 if grid[i] != "air" and grid[i] != "lava":
                     result.append(Block(player_location[0]+x, player_location[1]+y, player_location[2]+z, grid[i]))
                 i += 1
@@ -361,7 +361,7 @@ for b in blocks:
     print(b)
     if b.name == "diamond_block":
         player_position_vector = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
-        direction_vector = player_position_vector - b.position()
+        direction_vector = b.position() - player_position_vector
         print("Magnitude:", direction_vector.magnitude(), "| Direction:", direction_vector.direction())
 
 # Grounded check
