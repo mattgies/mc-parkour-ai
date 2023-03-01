@@ -77,6 +77,9 @@ class Block:
     def __str__(self):
         return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + "|" + self.name + ")"
 
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y and self.z == other.z
+
 
 # functions
 def GetMissionXML(summary=""):
@@ -151,8 +154,6 @@ def get_nearby_walkable_blocks(observations):
     """
     grid = observations.get(u'floor5x5x2')  
     player_location = [int(observations[u'XPos']), int(observations[u'ZPos']), int(observations[u'YPos'])]
-    print(grid)
-    print(player_location)
     result = []
     # TODO: Make these variables
     i = 0
@@ -163,6 +164,19 @@ def get_nearby_walkable_blocks(observations):
                     result.append(Block(player_location[0]+x, player_location[1]+z, player_location[2]+y, grid[i]))
                 i += 1
     return result
+
+
+def is_grounded(observations, nearby_blocks):
+    """
+    returns: bool: true if touching ground
+    """
+    # TODO: Make this use variables or something
+    # TODO: Also make own "IsClose" function for float math stuff
+    grid = observations.get(u'floor5x5x2')  
+    player_height = float(observations[u'YPos'])
+    player_height_rounded = int(player_height)
+    block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)]
+    return block_name_below_player != "lava" and block_name_below_player != "air" and (abs(player_height - player_height_rounded) <= 0.01)
     
 
 def create_model():
@@ -295,6 +309,7 @@ print()
 print("Mission running ", end=' ')
 
 # agent_host.sendCommand("move 2")
+agent_host.sendCommand("jump 1")
 time.sleep(1)
 world_state = agent_host.getWorldState()
 # x = copy.deepcopy(world_state.observations[0].text)
@@ -306,15 +321,17 @@ if not u'XPos' in obs or not u'ZPos' in obs:
     print("Does not exist")
 else:
     current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
-    print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'ZPos']), float(obs[u'ZPos'])))
+    print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos'])))
     print("Direction vector: (x = %.2f, y = %.2f, z = %.2f" % (float(obs[u'entities'][0][u'motionX']), float(obs[u'entities'][0][u'motionY']), float(obs[u'entities'][0][u'motionZ'])))
 
 # Get grid observations
 observations = json.loads(world_state.observations[-1].text)
 blocks = get_nearby_walkable_blocks(observations)
-# print(blocks)
 for b in blocks:
     print(b)
+
+# Grounded check
+print(is_grounded(observations, blocks))
 
 time.sleep(5)
 
