@@ -1,9 +1,19 @@
-
 # multiple grids (with names) in ObsFromGrid
 # min/max values per grid
 # DrawingDecorator components (DrawCuboid)
 
-def XMLGenerator(cube_coords):
+def cubeTags(cube_coords):
+    genstr = ""
+    for cube in cube_coords:
+        genstr += '<DrawBlock x="%d" y="%d" z="%d" type="grass"/>\n' % (cube)
+    return genstr
+
+def XMLGenerator(cube_coords, observation_grids):
+    # grid format:
+    # {"gridName": str.
+    #   "gridMin": (x1, y1, z1)
+    #   "gridMax": (x2, y2, z2)
+    # }
     xmlstring = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
     <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
         <About>
@@ -24,12 +34,8 @@ def XMLGenerator(cube_coords):
                 <AllowSpawning>false</AllowSpawning>
             </ServerInitialConditions>
             <ServerHandlers>
-                <FlatWorldGenerator generatorString="3;7,3*1,3*3,2,78;12;biome_1,village" />
-                <DrawingDecorator>
-                    <DrawBlock x="0" y="224" z="0" type="grass"/>
-                    <DrawBlock x="0" y="224" z="1" type="grass"/>
-                    <DrawBlock x="0" y="224" z="2" type="grass"/>
-                </DrawingDecorator>
+                <FlatWorldGenerator generatorString="3;252*0;12;biome_1,village" />
+                <DrawingDecorator> ''' + cubeTags(cube_coords) + ''' </DrawingDecorator>
                 <ServerQuitWhenAnyAgentFinishes />
             </ServerHandlers>
         </ServerSection>

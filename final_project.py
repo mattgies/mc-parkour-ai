@@ -15,7 +15,7 @@ import time
 from mcpi import minecraft
 
 import xmlgen
-# from parkourcourse1 import *
+import parkourcourse2 as course
 mc = minecraft.Minecraft.create("127.0.0.1", 10000)
 # xmlgen(CUBE_COORDS)
 # stepped_on_blocks = {Block()}
@@ -120,7 +120,10 @@ class Vector:
 
 # functions
 def GetMissionXML(summary=""):
-    return xmlgen.XMLGenerator([])
+    return xmlgen.XMLGenerator(
+        cube_coords=course.CUBE_COORDS,
+        observation_grids=[]
+    )
 
 def get_nearby_walkable_blocks(observations):
     """
