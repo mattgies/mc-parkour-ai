@@ -34,8 +34,82 @@ def choose_action(ep, model, input):
         action = tf.argmax(action_probs[0]).numpy()
         return action
 
+def episode_loop():
+    """
+    Until the episode is done, repeat the same
+    (state1, action1, result1, state2, action2, ...)
+    steps in a loop
+    """
+    pass
+
+
+def choose_action():
+    """
+    Called once per frame, to determine the next action to take given the current state
+    Uses the value of epsilon to determine whether to choose a random action or the best action (via tf.argmax)
+    
+    if we want: update epsilon to decay toward its minimum
+    """
+
+
+
+def take_action():
+    """
+    Called once per frame, after choose_action
+    
+    returns: float, representing Reward
+    """
+
+
 
 def update_target_model():
     """
     """
     pass
+
+
+def add_entry_to_replay():
+    """
+    Called every time the AI takes an action
+    Updates the replay buffers in place
+
+    returns: void
+    """
+    pass
+
+
+
+def remove_first_entry_in_replay():
+    """
+    This function will be called when our replay buffers are longer than MAX_HISTORY_LENGTH
+    """
+    del past_states[0]
+    del past_actions[0]
+    del past_rewards[0]
+    # maybe print something
+
+
+def training_loop():
+    while True:
+        episode_reward = 0
+        episode_done = False
+
+        for _ in range(MAX_ACTIONS_PER_EPISODE):
+            choose_action()
+            episode_reward += take_action()
+            add_entry_to_replay()
+
+            # if ready to update model (% UPDATE_MODEL_AFTER_N_FRAMES == 0)
+            # take sample from replay buffers & update q-values
+            # update value of episode_done
+
+
+            # if ready to update target model
+            update_target_model()
+
+
+            if len(past_states) > MAX_HISTORY_LENGTH:
+                remove_first_entry_in_replay()
+
+            if episode_done:
+                break
