@@ -3,6 +3,32 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 
+# CONSTANTS
+MAX_HISTORY_LENGTH = 50000
+MAX_ACTIONS_PER_EPISODE = 10000
+UPDATE_MODEL_AFTER_N_FRAMES = 5
+UPDATE_TARGET_AFTER_N_FRAMES = 5000
+
+# training parameters
+epsilon = 0.2
+
+# rewards
+{
+    "death": -5000,
+    "goingBackwards": -2,
+    "goingForwards": 2,
+    "reachedGoal": 5000
+}
+
+
+# replay values
+past_states = []
+past_actions = []
+past_rewards = []
+episode_reward = 0
+frame_number = 0
+episode_number = 0
+
 num_actions = 5 # for now actions are (move (forward), turn left, turn right, stop, jump)
 
 def create_model():
@@ -34,6 +60,7 @@ def choose_action(ep, model, input):
         action = tf.argmax(action_probs[0]).numpy()
         return action
 
+
 def episode_loop():
     """
     Until the episode is done, repeat the same
@@ -50,6 +77,7 @@ def choose_action():
     
     if we want: update epsilon to decay toward its minimum
     """
+    pass
 
 
 
@@ -59,7 +87,7 @@ def take_action():
     
     returns: float, representing Reward
     """
-
+    pass
 
 
 def update_target_model():
@@ -76,7 +104,6 @@ def add_entry_to_replay():
     returns: void
     """
     pass
-
 
 
 def remove_first_entry_in_replay():
