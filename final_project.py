@@ -122,7 +122,13 @@ class Vector:
 def GetMissionXML(summary=""):
     return xmlgen.XMLGenerator(
         cube_coords=course.CUBE_COORDS,
-        observation_grids=[]
+        observation_grids=[
+            {
+                "name": "floor5x5x2",
+                "min": Vector(-2, -1, -2),
+                "max": Vector(2, 0, 2)
+            }
+        ]
     )
 
 def get_nearby_walkable_blocks(observations):

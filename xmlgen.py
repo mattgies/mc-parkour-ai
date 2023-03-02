@@ -8,11 +8,18 @@ def cubeTags(cube_coords):
         genstr += '<DrawBlock x="%d" y="%d" z="%d" type="grass"/>\n' % (cube)
     return genstr
 
+def observationGrids(observation_grids):
+    genstr = ""
+    for grid in observation_grids:
+        min, max = grid["min"], grid["max"]
+        genstr += '<Grid name="%s">\n\t<min x="%d" y="%d" z="%d"/>\n\t<max x="%d" y="%d" z="%d"/>\n</Grid>\n' % (grid["name"], min.x, min.y, min.z, max.x, max.y, max.z)
+    return genstr
+
 def XMLGenerator(cube_coords, observation_grids):
     # grid format:
-    # {"gridName": str.
-    #   "gridMin": (x1, y1, z1)
-    #   "gridMax": (x2, y2, z2)
+    # {"name": str.
+    #   "min": Vector()
+    #   "max": Vector()
     # }
     xmlstring = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
     <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -52,13 +59,7 @@ def XMLGenerator(cube_coords, observation_grids):
                 <MissionQuitCommands/>
                 <InventoryCommands/>
                 <ObservationFromFullStats/>
-                <ObservationFromGrid>
-                    <!-- Observe blocks that are below and at leg-level of the agent. -->
-                    <Grid name="floor5x5x2">
-                        <min x="-2" y="-1" z="-2"/>
-                        <max x="2" y="0" z="2"/>
-                    </Grid>
-                </ObservationFromGrid>
+                <ObservationFromGrid> ''' + observationGrids(observation_grids) + ''' </ObservationFromGrid>
                 <ObservationFromNearbyEntities>
                     <Range name="entities" xrange="40" yrange="40" zrange="40"/>
                 </ObservationFromNearbyEntities>
