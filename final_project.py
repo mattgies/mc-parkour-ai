@@ -16,6 +16,8 @@ from mcpi import minecraft
 
 import xmlgen
 import parkourcourse2 as course
+import observationgrid1 as obsgrid
+from worldClasses import *
 mc = minecraft.Minecraft.create("127.0.0.1", 10000)
 # xmlgen(CUBE_COORDS)
 # stepped_on_blocks = {Block()}
@@ -71,64 +73,11 @@ episode_number = 0
 
 # loss_func = tf.keras.losses.MSE()
 
-# Classes
-class Block:
-    """
-    Stores information about a Minecraft block.
-    """
-    def __init__(self, x, y, z, name):
-        self.x = x
-        self.y = y
-        self.z = z
-        self.name = name
-
-    def __str__(self):
-        return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + "|" + self.name + ")"
-
-    def __eq__(self, other):
-        return self.x == other.x and self.y == other.y and self.z == other.z\
-            
-    def position(self) -> "Vector":
-        return Vector(self.x, self.y, self.z)
-    
-
-class Vector:
-    """
-    Stores a 3D vector.
-    """
-    def __init__(self, x, y, z) -> None:
-        self.x = x
-        self.y = y
-        self.z = z
-
-    def __str__(self) -> str:
-        return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + ")"
-
-    def __sub__(self, other) -> "Vector":
-        return Vector(self.x - other.x, self.y - other.y, self.z - other.z)
-
-    def __eq__(self, other) -> bool:
-        return self.x == other.x and self.y == other.y and self.z == other.z
-    
-    def magnitude(self) -> float:
-        return math.sqrt((self.x ** 2) + (self.y ** 2) + (self.z ** 2))
-    
-    def direction(self) -> "Vector":
-        mag = self.magnitude()
-        return Vector(self.x / mag, self.y / mag, self.z / mag)
-
-
 # functions
 def GetMissionXML(summary=""):
     return xmlgen.XMLGenerator(
         cube_coords=course.CUBE_COORDS,
-        observation_grids=[
-            {
-                "name": "floor5x5x2",
-                "min": Vector(-2, -1, -2),
-                "max": Vector(2, 0, 2)
-            }
-        ]
+        observation_grids=obsgrid.OBSERVATION_GRIDS
     )
 
 def get_nearby_walkable_blocks(observations):
