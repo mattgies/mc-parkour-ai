@@ -1,26 +1,30 @@
 # multiple grids (with names) in ObsFromGrid
 # min/max values per grid
 # DrawingDecorator components (DrawCuboid)
+from worldClasses import *
 
-def cubeTags(cube_coords):
+def cubeTags(cube_coords: list(Vector)):
     genstr = ""
     for cube in cube_coords:
         genstr += '<DrawBlock x="%d" y="%d" z="%d" type="grass"/>\n' % (cube)
     return genstr
 
-def observationGrids(observation_grids):
+def goalBlock(goal_coords: list(Vector)):
+    return '<DrawBlock x="%d" y="%d" z="%d" type="diamond_block"/>\n' % (goal_coords)
+
+def observationGrids(observation_grids: list(dict("name", "min", "max"))):
+    # grid format:
+    # {"name": str.
+    #   "min": Vector()
+    #   "max": Vector()
+    # }
     genstr = ""
     for grid in observation_grids:
         min, max = grid["min"], grid["max"]
         genstr += '<Grid name="%s">\n\t<min x="%d" y="%d" z="%d"/>\n\t<max x="%d" y="%d" z="%d"/>\n</Grid>\n' % (grid["name"], min.x, min.y, min.z, max.x, max.y, max.z)
     return genstr
 
-def XMLGenerator(cube_coords, observation_grids):
-    # grid format:
-    # {"name": str.
-    #   "min": Vector()
-    #   "max": Vector()
-    # }
+def XMLGenerator(cube_coords: list(Vector), observation_grids: list(Vector)):
     xmlstring = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
     <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
         <About>
@@ -42,7 +46,7 @@ def XMLGenerator(cube_coords, observation_grids):
             </ServerInitialConditions>
             <ServerHandlers>
                 <FlatWorldGenerator generatorString="3;252*0;12;biome_1,village" />
-                <DrawingDecorator> ''' + cubeTags(cube_coords) + ''' </DrawingDecorator>
+                <DrawingDecorator> ''' + cubeTags(cube_coords) + goalBlock(goal_coords) + ''' </DrawingDecorator>
                 <ServerQuitWhenAnyAgentFinishes />
             </ServerHandlers>
         </ServerSection>
