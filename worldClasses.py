@@ -15,7 +15,10 @@ class Block:
         return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + "|" + self.name + ")"
 
     def __eq__(self, other):
-        return self.x == other.x and self.y == other.y and self.z == other.z\
+        return self.x == other.x and self.y == other.y and self.z == other.z
+    
+    def __hash__(self):
+        return hash((self.x, self.y, self.z))
             
     def position(self) -> "Vector":
         return Vector(self.x, self.y, self.z)
@@ -32,6 +35,9 @@ class Vector:
 
     def __str__(self) -> str:
         return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + ")"
+    
+    def __add__(self, other) -> "Vector":
+        return Vector(self.x + other.x, self.y + other.y, self.z + other.z)
 
     def __sub__(self, other) -> "Vector":
         return Vector(self.x - other.x, self.y - other.y, self.z - other.z)

@@ -69,6 +69,10 @@ episode_number = 0
 
 # loss_func = tf.keras.losses.MSE()
 
+# global agent variables
+prev_agent_position = Vector(0.5, 227.0, 0.5) # Where the player was last update
+blocks_walked_on = set()
+
 # functions
 def GetMissionXML(summary=""):
     return xmlgen.XMLGenerator(
@@ -108,6 +112,72 @@ def is_grounded(observations):
     player_height_rounded = int(player_height)
     block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)] # TODO: Make this use variables or something
     return block_name_below_player != "lava" and block_name_below_player != "air" and (abs(player_height - player_height_rounded) <= 0.01)
+
+
+def get_state(agent_host) -> "tuple(float, float, float, float, float, float, float, bool)":
+    """
+    Computes state of the agent relative to the world for this update.
+    Return order:
+    direction to nearest unwalked block: x, y, z
+    movement direction of agent: dx, dy, dz
+    yaw
+    is_grounded
+
+    returns: tuple of 7 floats and 1 bool
+    """
+
+    global prev_agent_position
+    global blocks_walked_on
+
+    # TODO: Could do try/catch and skip this loop if it gives an out of bounds exception.
+    # NOTE: Getting the observations multiple times on the same frame most likely causes the out of bounds exception.
+    # Get agent observations for this update.
+    world_state = agent_host.getWorldState()
+    obs_text = world_state.observations[-1].text
+    obs = json.loads(obs_text) # most recent observation
+    # Can check if observation doesn't contain necessary data.
+    if not u'XPos' in obs or not u'ZPos' in obs:
+        print("Does not exist")
+    # else:
+    #     current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
+    #     print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos'])))
+    #     print("Direction vector: (x = %.2f, y = %.2f, z = %.2f" % (float(obs[u'entities'][0][u'motionX']), float(obs[u'entities'][0][u'motionY']), float(obs[u'entities'][0][u'motionZ'])))
+
+    # Where agent is this update.
+    agent_position = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
+    agent_position_int = Vector(int(obs[u'XPos']), int(obs[u'YPos']), int(obs[u'ZPos']))
+
+    # Grounded check
+    grounded_this_update = is_grounded(obs)
+
+    # Get grid observations
+    blocks = get_nearby_walkable_blocks(obs)
+    direction_to_closest_block = Vector(0,0,0)
+    closest_block_distance = 10 ** 4
+    for b in blocks:
+        direction = b.position() - agent_position
+        if direction.magnitude() < closest_block_distance:
+            direction_to_closest_block = direction
+            closest_block_distance = direction.magnitude()
+
+        if grounded_this_update and agent_position_int == b.position() + Vector(0,1,0) and b not in blocks_walked_on:
+            blocks_walked_on.add(b)
+
+    # Velocity vector
+    velocity = agent_position - prev_agent_position
+    prev_agent_position = agent_position
+
+    # Facing direction. Doesn't need to look up or down
+    yaw = obs[u'Yaw']
+
+    return (direction_to_closest_block.x,
+            direction_to_closest_block.y,
+            direction_to_closest_block.z,
+            velocity.x,
+            velocity.y,
+            velocity.z,
+            yaw,
+            grounded_this_update)
     
 
 def create_model():
@@ -242,55 +312,17 @@ print("Mission running ", end=' ')
 time.sleep(1)
 
 # Simulate running for a few seconds
-prev_agent_position = Vector(0.5, 227.0, 0.5) # Where the player was last update
-blocks_walked_on = set()
+
 
 agent_host.sendCommand("move 0.5")
 # agent_host.sendCommand("jump 1")
 # agent_host.sendCommand("turn 1")
 
-for update_num in range(80):
+for update_num in range(20):
     print("Update num:", update_num)
 
-    # TODO: Could do try/catch and skip this loop if it gives an out of bounds exception.
-    # NOTE: Getting the observations multiple times on the same frame most likely causes the out of bounds exception.
-    # Get agent observations for this update.
-    world_state = agent_host.getWorldState()
-    obs_text = world_state.observations[-1].text
-    obs = json.loads(obs_text) # most recent observation
-    # Can check if observation doesn't contain necessary data.
-    if not u'XPos' in obs or not u'ZPos' in obs:
-        print("Does not exist")
-    # else:
-    #     current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
-    #     print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos'])))
-    #     print("Direction vector: (x = %.2f, y = %.2f, z = %.2f" % (float(obs[u'entities'][0][u'motionX']), float(obs[u'entities'][0][u'motionY']), float(obs[u'entities'][0][u'motionZ'])))
-
-    # Where agent is this update.
-    agent_position = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
-    agent_position_int = Vector(int(obs[u'XPos']), int(obs[u'YPos']), int(obs[u'ZPos']))
-
-    # Grounded check
-    grounded_this_update = is_grounded(obs)
-    print("Is grounded:", grounded_this_update)
-
-    # Get grid observations
-    blocks = get_nearby_walkable_blocks(obs)
-    for b in blocks:
-        if b.name == "diamond_block":
-            direction_vector = b.position() - agent_position
-            print("Magnitude:", direction_vector.magnitude(), "| Direction:", direction_vector.direction())
-
-        if grounded_this_update and agent_position_int == b.position() and b not in blocks_walked_on:
-            blocks_walked_on.add(b)
-    print("Blocks walked on:", len(blocks_walked_on), blocks_walked_on)
-
-    # Velocity vector
-    print("Velocity:", agent_position - prev_agent_position)
-    prev_agent_position = agent_position
-
-    # Facing direction. Doesn't need to look up or down
-    print("Look direction:", obs[u'Yaw'])
+    cur_state = get_state(agent_host)
+    # TODO: do something with the current state
 
     time.sleep(0.05)
 
