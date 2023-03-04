@@ -68,6 +68,12 @@ def XMLGenerator(cube_coords, observation_grids, goal_coords):
                     <Range name="entities" xrange="40" yrange="40" zrange="40"/>
                 </ObservationFromNearbyEntities>
                 <ObservationFromFullInventory/>
+                <RewardForTouchingBlockType>
+                    <Block reward="2500.0" type="diamond_block" behaviour="onceOnly"/>
+                </RewardForTouchingBlockType>
+                <AgentQuitFromTouchingBlockType>
+                    <Block type="diamond_block" />
+                </AgentQuitFromTouchingBlockType>
             </AgentHandlers>
         </AgentSection>
 

@@ -32,7 +32,7 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 5000
-NUM_EPISODES = 3
+NUM_EPISODES = 500
 
 # training parameters
 EPSILON = 0.5
@@ -61,9 +61,9 @@ if NUM_ACTIONS != len(actionNamesToActionsMap):
 # rewards
 rewardsMap: dict() = {
     "steppedOnPreviouslySeenBlock": -1,
-    "newBlockSteppedOn": 2,
-    "death": -500.0,
-    "goalReached": 500
+    "newBlockSteppedOn": 50,
+    "death": -1000.0,
+    "goalReached": 2500
 }
 
 
@@ -234,6 +234,8 @@ def choose_action(ep, model, state):
     
     if we want: update epsilon to decay toward its minimum
     """
+    # return actionNames.index("moveFull")
+    
     if np.random.rand(1)[0] < ep:
         return np.random.choice(NUM_ACTIONS)
     else:
@@ -290,6 +292,10 @@ def calculate_reward(raw_state):
     agent_position_int = Vector(int(obs[u'XPos']), int(obs[u'YPos']), int(obs[u'ZPos']))
         
     grounded_this_update = is_grounded(obs)
+
+    if (not grounded_this_update):
+        return 0, False
+
     blocks = get_nearby_walkable_blocks(obs)
     onOldBlock = False
     for b in blocks:
@@ -357,17 +363,27 @@ def training_loop(agent_host):
 
         # time.sleep(0.05)
 
+        goal_reached = False
         next_state_raw = agent_host.getWorldState()
         while len(next_state_raw.observations) == 0:
             next_state_raw = agent_host.getWorldState()
+            if (not next_state_raw.is_mission_running):
+                print("mission stopped running")
+                print(next_state_raw.rewards[0].getValue())
+                goal_reached = True
+                break
         frame_number += 1
-        next_state = format_state(next_state_raw)
-
-        reward, episode_done = calculate_reward(next_state_raw)
-        episode_reward += reward
+        
+        if not goal_reached:
+            next_state = format_state(next_state_raw)
+            reward, episode_done = calculate_reward(next_state_raw)
+            episode_reward += reward
+        else:
+            next_state = cur_state
+            reward, episode_done = rewardsMap["goalReached"], True
 
         add_entry_to_replay(next_state, action, episode_reward)
-        print(episode_reward)
+        # print(episode_reward)
         
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
             random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
