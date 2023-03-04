@@ -7,6 +7,8 @@ import numpy as np
 import math
 import MalmoPython
 import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
 import json
 import copy
 import os
@@ -32,29 +34,32 @@ UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 5000
 
 # training parameters
-epsilon = 0.2
+epsilon = 0.5
 
 
 # states (state space is nearly infinite; not directly defined in our code)
 # actions
-actions = {"move", "jump", ""}
-# OR
-actions = {
-    "move_slow": "move 0.2",
-    "move_medium": "move 0.5",
-    "move_fast": "move 1.0",
-    "jump_low": "jump 0.2",
-    "jump_medium": "jump 0.5",
-    "jump_max": "jump 1.0"
-    ''' more here '''
+actionNamesToActionsMap: dict() = {
+    "stopMove": "move 0.0",
+    "moveHalf": "move 0.5",
+    "moveFull": "move 1.0",
+    "jumpFull": "jump 1.0",
+    "stopJump": "jump 0.0",
+    "turnRight": "turn 1.0",
+    "turnLeft": "turn -1.0",
+    "stopTurn": "turn 0.0"
 }
+actionNames: list() = [action for action in actionNamesToActionsMap]
+NUM_ACTIONS: int = len(actionNames)
+if NUM_ACTIONS != len(actionNamesToActionsMap):
+    raise IndexError("1+ actions are missing from actionNames or the actionNamesToActionsMap")
 
 # rewards
-{
-    "death": -5000,
-    "goingBackwards": -2,
-    "goingForwards": 2,
-    "reachedGoal": 5000
+rewardsMap: dict() = {
+    "steppedOnPreviouslySeenBlock": -1,
+    "newBlockSteppedOn": 2,
+    "death": -500.0,
+    "goalReached": 500
 }
 
 
@@ -186,35 +191,99 @@ def get_state(agent_host) -> "tuple(float, float, float, float, float, float, fl
     
 
 def create_model():
-    pass
+    input_shape = (8,) # 3 for closest block, 3 for velocity vector, 2 for two boolean inputs
+
+    inputs = layers.Input(shape=input_shape)
+
+    layer1 = layers.Flatten()(inputs)
+    layer2 = layers.Dense(16, activation='relu')(layer1)
+    layer3 = layers.Dense(16, activation='relu')(layer2)
+    layer4 = layers.Dense(16, activation='relu')(layer3)
+
+    action = layers.Dense(NUM_ACTIONS, activation='linear')(layer4)
+
+    return keras.Model(inputs=inputs, outputs=action)
+
+# Don't think this is necessary because training loop function just loops episode as well
+# def episode_loop():
+#     """
+#     Until the episode is done, repeat the same
+#     (state1, action1, result1, state2, action2, ...)
+#     steps in a loop
+#     """
+#     pass
 
 
-def episode_loop():
-    """
-    Until the episode is done, repeat the same
-    (state1, action1, result1, state2, action2, ...)
-    steps in a loop
-    """
-    pass
-
-
-def choose_action():
+def choose_action(ep, model, state):
     """
     Called once per frame, to determine the next action to take given the current state
     Uses the value of epsilon to determine whether to choose a random action or the best action (via tf.argmax)
     
     if we want: update epsilon to decay toward its minimum
     """
+    if np.random.rand(1)[0] < ep:
+        return np.random.choice(NUM_ACTIONS)
+    else:
+        action_probs = model(tf.expand_dims(tf.convert_to_tensor(state), 0), training=False)
+        action = tf.argmax(action_probs[0]).numpy()
+        return action
 
 
 
-def take_action():
+def take_action(action, agent_host):
     """
     Called once per frame, after choose_action
     
-    returns: float, representing Reward
+    returns: void, just runs the action
     """
+    agent_host.sendCommand(actionNamesToActionsMap[actionNames[action]])
 
+
+def calculate_reward(agent_host):
+    """
+    Called once per frame, after new state
+    
+    returns: int, bool, integer reward and whether episode is done or not
+    """
+    reward = 0
+
+    global blocks_walked_on
+    world_state = agent_host.getWorldState()
+
+    try:
+        obs_text = world_state.observations[-1].text
+    except IndexError as err:
+        raise ValueError("Unable to get new agent state.")
+
+    obs = json.loads(obs_text) # most recent observation
+    # Can check if observation doesn't contain necessary data.
+
+    # need to update, but very rudimentary reward checking system
+    # check for game finished
+    grid = obs.get(u'floor5x5x2')  
+    player_height = float(obs[u'YPos'])
+    player_height_rounded = int(player_height)
+    block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)] # TODO: Make this use variables or something
+    if abs(player_height - player_height_rounded) <= 0.01:
+        if(block_name_below_player == "diamond_block"):
+            reward += rewardsMap["goalReached"]
+            return reward, True
+    
+    agent_position_int = Vector(int(obs[u'XPos']), int(obs[u'YPos']), int(obs[u'ZPos']))
+        
+    grounded_this_update = is_grounded(obs)
+    blocks = get_nearby_walkable_blocks(obs)
+    onOldBlock = False
+    for b in blocks:
+        if grounded_this_update and agent_position_int == b.position() + Vector(0,1,0) and b in blocks_walked_on:
+            onOldBlock = True
+            break
+    if onOldBlock:
+        reward += rewardsMap["steppedOnPreviouslySeenBlock"]
+    else:
+        reward += rewardsMap["newBlockSteppedOn"]
+    
+    return reward, False
 
 
 def update_target_model():
@@ -223,14 +292,16 @@ def update_target_model():
     pass
 
 
-def add_entry_to_replay():
+def add_entry_to_replay(state, action, reward):
     """
     Called every time the AI takes an action
     Updates the replay buffers in place
 
     returns: void
     """
-    pass
+    past_states.append(state)
+    past_actions.append(action)
+    past_rewards.append(reward)
 
 
 
@@ -244,23 +315,39 @@ def remove_first_entry_in_replay():
     # maybe print something
 
 
-def training_loop():
+def training_loop(agent_host):
     while True:
+        state = get_state(agent_host)
         episode_reward = 0
         episode_done = False
+        frame_number = 0
+
+        model = create_model()
+        target_model = create_model()
+
+        optimizer = keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0)
 
         for _ in range(MAX_ACTIONS_PER_EPISODE):
-            choose_action()
-            episode_reward += take_action()
-            add_entry_to_replay()
+            action = choose_action(epsilon, model, state)
+            take_action(action, agent_host)
+
+            time.sleep(0.05)
+            frame_number += 1
+
+            reward, episode_done = calculate_reward(agent_host)
+            episode_reward += reward
+
+            time.sleep(0.05)
+            next_state = get_state(agent_host)
+            
+            add_entry_to_replay(state, action, episode_reward)
 
             # if ready to update model (% UPDATE_MODEL_AFTER_N_FRAMES == 0)
             # take sample from replay buffers & update q-values
             # update value of episode_done
-
-
-            # if ready to update target model
-            update_target_model()
+            if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0:
+                # if ready to update target model
+                update_target_model()
 
 
             if len(past_states) > MAX_HISTORY_LENGTH:
@@ -316,23 +403,26 @@ print("Mission running ", end=' ')
 
 time.sleep(1)
 
+# testing training loop function
+training_loop(agent_host)
+
 # Simulate running for a few seconds
 
 
-agent_host.sendCommand("move 0.5")
+# agent_host.sendCommand("move 0.5")
 # agent_host.sendCommand("jump 1")
 # agent_host.sendCommand("turn 1")
 
-for update_num in range(20):
-    print("Update num:", update_num)
+# for update_num in range(20):
+#     print("Update num:", update_num)
 
-    try:
-        cur_state = get_state(agent_host)
-    except ValueError as err:
-        print(repr(err))
-    # TODO: do something with the current state
+#     try:
+#         cur_state = get_state(agent_host)
+#     except ValueError as err:
+#         print(repr(err))
+#     # TODO: do something with the current state
 
-    time.sleep(0.05)
+#     time.sleep(0.05)
 
-time.sleep(1)
+# time.sleep(1)
 
