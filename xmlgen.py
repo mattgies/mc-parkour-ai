@@ -3,10 +3,12 @@
 # DrawingDecorator components (DrawCuboid)
 from worldClasses import *
 
+lava_floor = '''<DrawCuboid x1="-20" y1="225" z1="-20" x2="20" y2="225" z2="20" type="lava" />\n'''
+
 def cubeTags(cube_coords):
     genstr = ""
     for cube in cube_coords:
-        genstr += '<DrawBlock x="%d" y="%d" z="%d" type="grass"/>\n' % (cube)
+        genstr += '<DrawBlock x="%d" y="%d" z="%d" type="stone"/>\n' % (cube)
     return genstr
 
 def goalBlock(goal_coords):
@@ -46,7 +48,7 @@ def XMLGenerator(cube_coords, observation_grids, goal_coords):
             </ServerInitialConditions>
             <ServerHandlers>
                 <FlatWorldGenerator generatorString="3;256*0;12;biome_1,village" />
-                <DrawingDecorator> ''' + cubeTags(cube_coords) + goalBlock(goal_coords) + ''' </DrawingDecorator>
+                <DrawingDecorator> ''' + lava_floor + cubeTags(cube_coords) + goalBlock(goal_coords) + ''' </DrawingDecorator>
                 <ServerQuitWhenAnyAgentFinishes />
             </ServerHandlers>
         </ServerSection>
@@ -54,7 +56,7 @@ def XMLGenerator(cube_coords, observation_grids, goal_coords):
         <AgentSection mode="Survival">
             <Name>ParkourPeter</Name>
             <AgentStart>
-                <Placement x="0.5" y="227.0" z="0.5"/>
+                <Placement x="0.5" y="227.0" z="0.5" pitch="45" />
             </AgentStart>
             <AgentHandlers>
                 <ContinuousMovementCommands turnSpeedDegs="480"/>

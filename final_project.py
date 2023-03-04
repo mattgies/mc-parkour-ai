@@ -47,8 +47,8 @@ actionNamesToActionsMap: dict() = {
     "stopMove": "move 0.0",
     "moveHalf": "move 0.5",
     "moveFull": "move 1.0",
-    "jumpFull": "jump 1.0",
-    "stopJump": "jump 0.0",
+    "jumpFull": "jump 1",
+    "stopJump": "jump 0",
     "turnRight": "turn 1.0",
     "turnLeft": "turn -1.0",
     "stopTurn": "turn 0.0"
@@ -364,17 +364,27 @@ def training_loop(agent_host):
         # time.sleep(0.05)
 
         goal_reached = False
+        is_dead = False
         next_state_raw = agent_host.getWorldState()
         while len(next_state_raw.observations) == 0:
             next_state_raw = agent_host.getWorldState()
             if (not next_state_raw.is_mission_running):
-                print("mission stopped running")
-                print(next_state_raw.rewards[0].getValue())
-                goal_reached = True
+                # TODO: Hack to check if player has reached the goal or not. There are multiple ways to end the mission
+                if cur_state[7]:
+                    print("mission stopped running")
+                    print(next_state_raw.rewards[0].getValue())
+                    goal_reached = True
+                else:
+                    print("Agent has died or fallen off the map")
+                    is_dead = True
                 break
         frame_number += 1
         
-        if not goal_reached:
+        # print(next_state_raw.observations[-1].text)
+        if is_dead:
+            next_state = cur_state
+            reward, episode_done = rewardsMap["death"], True
+        elif not goal_reached:
             next_state = format_state(next_state_raw)
             reward, episode_done = calculate_reward(next_state_raw)
             episode_reward += reward
