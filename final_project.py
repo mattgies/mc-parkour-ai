@@ -32,9 +32,13 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 5000
+NUM_EPISODES = 3
 
 # training parameters
-epsilon = 0.5
+EPSILON = 0.5
+GAMMA = 0.9
+optimizer = keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0)
+loss_function = keras.losses.MeanSquaredError()
 
 
 # states (state space is nearly infinite; not directly defined in our code)
@@ -64,12 +68,36 @@ rewardsMap: dict() = {
 
 
 # replay values
+BATCH_SIZE = 40
 past_states = []
 past_actions = []
 past_rewards = []
 episode_reward = 0
 frame_number = 0
 episode_number = 0
+
+
+
+
+# models
+def create_model():
+    input_shape = (8,) # 3 for closest block, 3 for velocity vector, 2 for two boolean inputs
+
+    inputs = layers.Input(shape=input_shape)
+
+    layer1 = layers.Dense(16, activation='relu', name="layer1")(inputs)
+    layer2 = layers.Dense(16, activation='relu', name="layer2")(layer1)
+    layer3 = layers.Dense(16, activation='relu', name="layer3")(layer2)
+
+    action = layers.Dense(NUM_ACTIONS, activation='linear')(layer3)
+
+    return keras.Model(inputs=inputs, outputs=action)
+
+model = create_model()
+target_model = create_model()
+
+
+
 
 
 # loss_func = tf.keras.losses.MSE()
@@ -119,7 +147,7 @@ def is_grounded(observations):
     return block_name_below_player != "lava" and block_name_below_player != "air" and (abs(player_height - player_height_rounded) <= 0.01)
 
 
-def get_state(agent_host) -> "tuple(float, float, float, float, float, float, float, bool)":
+def format_state(raw_state) -> "tuple(float, float, float, float, float, float, float, bool)":
     """
     Computes state of the agent relative to the world for this update.
     Return order:
@@ -137,12 +165,11 @@ def get_state(agent_host) -> "tuple(float, float, float, float, float, float, fl
     # TODO: Could do try/catch and skip this loop if it gives an out of bounds exception.
     # NOTE: Getting the observations multiple times on the same frame most likely causes the out of bounds exception.
     # Get agent observations for this update.
-    world_state = agent_host.getWorldState()
 
-    try:
-        obs_text = world_state.observations[-1].text
-    except IndexError as err:
-        raise ValueError("Unable to get new agent state.")
+    # try:
+    obs_text = raw_state.observations[-1].text
+    # except IndexError as err:
+    #     raise ValueError("Unable to get new agent state.")
 
     obs = json.loads(obs_text) # most recent observation
     # Can check if observation doesn't contain necessary data.
@@ -190,20 +217,6 @@ def get_state(agent_host) -> "tuple(float, float, float, float, float, float, fl
             grounded_this_update)
     
 
-def create_model():
-    input_shape = (8,) # 3 for closest block, 3 for velocity vector, 2 for two boolean inputs
-
-    inputs = layers.Input(shape=input_shape)
-
-    layer1 = layers.Flatten()(inputs)
-    layer2 = layers.Dense(16, activation='relu')(layer1)
-    layer3 = layers.Dense(16, activation='relu')(layer2)
-    layer4 = layers.Dense(16, activation='relu')(layer3)
-
-    action = layers.Dense(NUM_ACTIONS, activation='linear')(layer4)
-
-    return keras.Model(inputs=inputs, outputs=action)
-
 # Don't think this is necessary because training loop function just loops episode as well
 # def episode_loop():
 #     """
@@ -239,7 +252,7 @@ def take_action(action, agent_host):
     agent_host.sendCommand(actionNamesToActionsMap[actionNames[action]])
 
 
-def calculate_reward(agent_host):
+def calculate_reward(raw_state):
     """
     Called once per frame, after new state
     
@@ -248,12 +261,12 @@ def calculate_reward(agent_host):
     reward = 0
 
     global blocks_walked_on
-    world_state = agent_host.getWorldState()
+    world_state = raw_state
 
-    try:
-        obs_text = world_state.observations[-1].text
-    except IndexError as err:
-        raise ValueError("Unable to get new agent state.")
+    # try:
+    obs_text = world_state.observations[-1].text
+    # except IndexError as err:
+    #     raise ValueError("Unable to get new agent state.")
 
     obs = json.loads(obs_text) # most recent observation
     # Can check if observation doesn't contain necessary data.
@@ -262,6 +275,11 @@ def calculate_reward(agent_host):
     # check for game finished
     grid = obs.get(u'floor5x5x2')  
     player_height = float(obs[u'YPos'])
+
+    if (player_height < 100):
+        reward += rewardsMap["death"]
+        return reward, True
+
     player_height_rounded = int(player_height)
     block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)] # TODO: Make this use variables or something
     if abs(player_height - player_height_rounded) <= 0.01:
@@ -289,7 +307,7 @@ def calculate_reward(agent_host):
 def update_target_model():
     """
     """
-    pass
+    target_model.set_weights(model.get_weights())
 
 
 def add_entry_to_replay(state, action, reward):
@@ -304,6 +322,11 @@ def add_entry_to_replay(state, action, reward):
     past_rewards.append(reward)
 
 
+def reset_replay():
+    past_states = []
+    past_actions = []
+    past_rewards = []
+
 
 def remove_first_entry_in_replay():
     """
@@ -316,45 +339,67 @@ def remove_first_entry_in_replay():
 
 
 def training_loop(agent_host):
-    while True:
-        state = get_state(agent_host)
-        episode_reward = 0
-        episode_done = False
-        frame_number = 0
+    reset_replay()
+    
+    episode_reward = 0
+    episode_done = False
+    frame_number = 0
+    cur_state_raw = agent_host.getWorldState()
+    while len(cur_state_raw.observations) == 0:
+        cur_state_raw = agent_host.getWorldState()
+    cur_state = format_state(cur_state_raw)
 
-        model = create_model()
-        target_model = create_model()
+    for _ in range(MAX_ACTIONS_PER_EPISODE):
+        if len(past_states) > 0:
+            cur_state = past_states[-1]
+        action = choose_action(EPSILON, model, cur_state)
+        take_action(action, agent_host)
 
-        optimizer = keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0)
+        # time.sleep(0.05)
 
-        for _ in range(MAX_ACTIONS_PER_EPISODE):
-            action = choose_action(epsilon, model, state)
-            take_action(action, agent_host)
+        next_state_raw = agent_host.getWorldState()
+        while len(next_state_raw.observations) == 0:
+            next_state_raw = agent_host.getWorldState()
+        frame_number += 1
+        next_state = format_state(next_state_raw)
 
-            time.sleep(0.05)
-            frame_number += 1
+        reward, episode_done = calculate_reward(next_state_raw)
+        episode_reward += reward
 
-            reward, episode_done = calculate_reward(agent_host)
-            episode_reward += reward
-
-            time.sleep(0.05)
-            next_state = get_state(agent_host)
+        add_entry_to_replay(next_state, action, episode_reward)
+        print(episode_reward)
+        
+        if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
+            random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
+            sampled_states = np.array([past_states[i] for i in random_indices])
+            sampled_actions = np.array([past_actions[i] for i in random_indices])
+            sampled_rewards = np.array([past_rewards[i] for i in random_indices])
             
-            add_entry_to_replay(state, action, episode_reward)
+            # next_state = tf.convert_to_tensor(next_state)
+            predicted_future_rewards = target_model.predict(sampled_states) # prints to stdout
+            bellman_updated_q_vals = sampled_rewards + GAMMA * tf.reduce_max(predicted_future_rewards, axis=1)
+            action_mask = tf.one_hot(sampled_actions, NUM_ACTIONS)
 
-            # if ready to update model (% UPDATE_MODEL_AFTER_N_FRAMES == 0)
-            # take sample from replay buffers & update q-values
-            # update value of episode_done
-            if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0:
-                # if ready to update target model
-                update_target_model()
+            with tf.GradientTape() as tape:
+                original_q_vals = model(sampled_states)
+                original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
+                loss = loss_function(bellman_updated_q_vals, original_q_vals_for_actions)
+            
+            gradients = tape.gradient(loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        # if ready to update model (% UPDATE_MODEL_AFTER_N_FRAMES == 0)
+        # take sample from replay buffers & update q-values
+        # update value of episode_done
+        if frame_number % UPDATE_TARGET_AFTER_N_FRAMES == 0:
+            # if ready to update target model
+            update_target_model()
 
 
-            if len(past_states) > MAX_HISTORY_LENGTH:
-                remove_first_entry_in_replay()
+        if len(past_states) > MAX_HISTORY_LENGTH:
+            remove_first_entry_in_replay()
 
-            if episode_done:
-                break
+        if episode_done:
+            break
 
 
 # Create default Malmo objects:
@@ -373,56 +418,38 @@ if agent_host.receivedArgument("help"):
     exit(0)
 
 my_mission = MalmoPython.MissionSpec(GetMissionXML(), True)
-my_mission_record = MalmoPython.MissionRecordSpec()
 
 # Attempt to start a mission:
 max_retries = 3
-for retry in range(max_retries):
-    try:
-        agent_host.startMission( my_mission, my_client_pool, my_mission_record, 0, "myExperimentString" )
-        break
-    except RuntimeError as e:
-        if retry == max_retries - 1:
-            print("Error starting mission:",e)
-            exit(1)
-        else:
-            time.sleep(2)
+for i in range(NUM_EPISODES):
+    print("Episode " + str(i+1) + " of " + str(NUM_EPISODES))
+    
+    my_mission_record = MalmoPython.MissionRecordSpec()
 
-# Loop until mission starts:
-print("Waiting for the mission to start ", end=' ')
-world_state = agent_host.getWorldState()
-while not world_state.has_mission_begun:
-    print(".", end="")
-    time.sleep(0.1)
+    for retry in range(max_retries):
+        try:
+            agent_host.startMission( my_mission, my_client_pool, my_mission_record, 0, "myExperimentString" )
+            break
+        except RuntimeError as e:
+            if retry == max_retries - 1:
+                print("Error starting mission:",e)
+                exit(1)
+            else:
+                time.sleep(2)
+
+    # Loop until mission starts:
+    print("Waiting for the mission to start ", end=' ')
     world_state = agent_host.getWorldState()
-    for error in world_state.errors:
-        print("Error:",error.text)
+    while not world_state.has_mission_begun:
+        print(".", end="")
+        time.sleep(0.1)
+        world_state = agent_host.getWorldState()
+        for error in world_state.errors:
+            print("Error:",error.text)
 
-print()
-print("Mission running ", end=' ')
+    print()
+    print("Mission running ", end=' ')
 
-time.sleep(1)
-
-# testing training loop function
-training_loop(agent_host)
-
-# Simulate running for a few seconds
-
-
-# agent_host.sendCommand("move 0.5")
-# agent_host.sendCommand("jump 1")
-# agent_host.sendCommand("turn 1")
-
-# for update_num in range(20):
-#     print("Update num:", update_num)
-
-#     try:
-#         cur_state = get_state(agent_host)
-#     except ValueError as err:
-#         print(repr(err))
-#     # TODO: do something with the current state
-
-#     time.sleep(0.05)
-
-# time.sleep(1)
-
+    # testing training loop function
+    training_loop(agent_host)
+    time.sleep(0.5)

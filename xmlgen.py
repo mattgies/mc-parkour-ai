@@ -45,7 +45,7 @@ def XMLGenerator(cube_coords, observation_grids, goal_coords):
                 <AllowSpawning>false</AllowSpawning>
             </ServerInitialConditions>
             <ServerHandlers>
-                <FlatWorldGenerator generatorString="3;252*0;12;biome_1,village" />
+                <FlatWorldGenerator generatorString="3;256*0;12;biome_1,village" />
                 <DrawingDecorator> ''' + cubeTags(cube_coords) + goalBlock(goal_coords) + ''' </DrawingDecorator>
                 <ServerQuitWhenAnyAgentFinishes />
             </ServerHandlers>
@@ -68,9 +68,6 @@ def XMLGenerator(cube_coords, observation_grids, goal_coords):
                     <Range name="entities" xrange="40" yrange="40" zrange="40"/>
                 </ObservationFromNearbyEntities>
                 <ObservationFromFullInventory/>
-                <AgentQuitFromCollectingItem>
-                    <Item type="rabbit_stew" description="Supper's Up!!"/>
-                </AgentQuitFromCollectingItem>
             </AgentHandlers>
         </AgentSection>
 
