@@ -3,16 +3,16 @@
 # DrawingDecorator components (DrawCuboid)
 from worldClasses import *
 
-def cubeTags(cube_coords: list(Vector)):
+def cubeTags(cube_coords):
     genstr = ""
     for cube in cube_coords:
         genstr += '<DrawBlock x="%d" y="%d" z="%d" type="grass"/>\n' % (cube)
     return genstr
 
-def goalBlock(goal_coords: list(Vector)):
-    return '<DrawBlock x="%d" y="%d" z="%d" type="diamond_block"/>\n' % (goal_coords)
+def goalBlock(goal_coords):
+    return '<DrawBlock x="%d" y="%d" z="%d" type="diamond_block"/>\n' % (goal_coords.x, goal_coords.y, goal_coords.z)
 
-def observationGrids(observation_grids: list(dict("name", "min", "max"))):
+def observationGrids(observation_grids):
     # grid format:
     # {"name": str.
     #   "min": Vector()
@@ -24,7 +24,7 @@ def observationGrids(observation_grids: list(dict("name", "min", "max"))):
         genstr += '<Grid name="%s">\n\t<min x="%d" y="%d" z="%d"/>\n\t<max x="%d" y="%d" z="%d"/>\n</Grid>\n' % (grid["name"], min.x, min.y, min.z, max.x, max.y, max.z)
     return genstr
 
-def XMLGenerator(cube_coords: list(Vector), observation_grids: list(Vector)):
+def XMLGenerator(cube_coords, observation_grids, goal_coords):
     xmlstring = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
     <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
         <About>

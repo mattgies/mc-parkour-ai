@@ -1,3 +1,5 @@
+from worldClasses import *
+
 CUBE_COORDS = [
     (0, 225, 0),
     (0, 225, 1),
@@ -8,3 +10,5 @@ CUBE_COORDS = [
     (1, 225, 5),
     (2, 225, 5)
 ]
+
+GOAL_COORDS = Vector(0, 225, 6)

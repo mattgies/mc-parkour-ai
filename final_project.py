@@ -12,20 +12,16 @@ import copy
 import os
 import sys
 import time
-# from mcpi import minecraft
 
 import xmlgen
 import parkourcourse2 as course
 import observationgrid1 as obsgrid
 from worldClasses import *
-mc = minecraft.Minecraft.create("127.0.0.1", 10000)
-# xmlgen(CUBE_COORDS)
 # stepped_on_blocks = {Block()}
 
 x = tf.constant(4)
 for i in range(5):
     print(x)
-
 
 
 
@@ -77,7 +73,8 @@ episode_number = 0
 def GetMissionXML(summary=""):
     return xmlgen.XMLGenerator(
         cube_coords=course.CUBE_COORDS,
-        observation_grids=obsgrid.OBSERVATION_GRIDS
+        observation_grids=obsgrid.OBSERVATION_GRIDS,
+        goal_coords=course.GOAL_COORDS
     )
 
 def get_nearby_walkable_blocks(observations):
