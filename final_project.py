@@ -12,7 +12,7 @@ import copy
 import os
 import sys
 import time
-from mcpi import minecraft
+# from mcpi import minecraft
 
 import xmlgen
 import parkourcourse2 as course
@@ -101,7 +101,7 @@ def get_nearby_walkable_blocks(observations):
     return result
 
 
-def is_grounded(observations, nearby_blocks):
+def is_grounded(observations):
     """
     returns: bool: true if touching ground
     """
@@ -246,8 +246,9 @@ time.sleep(1)
 
 # Simulate running for a few seconds
 prev_agent_position = Vector(0.5, 227.0, 0.5) # Where the player was last update
+blocks_walked_on = set()
 
-# agent_host.sendCommand("move 100")
+agent_host.sendCommand("move 0.5")
 # agent_host.sendCommand("jump 1")
 # agent_host.sendCommand("turn 1")
 
@@ -270,6 +271,11 @@ for update_num in range(80):
 
     # Where agent is this update.
     agent_position = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
+    agent_position_int = Vector(int(obs[u'XPos']), int(obs[u'YPos']), int(obs[u'ZPos']))
+
+    # Grounded check
+    grounded_this_update = is_grounded(obs)
+    print("Is grounded:", grounded_this_update)
 
     # Get grid observations
     blocks = get_nearby_walkable_blocks(obs)
@@ -278,8 +284,9 @@ for update_num in range(80):
             direction_vector = b.position() - agent_position
             print("Magnitude:", direction_vector.magnitude(), "| Direction:", direction_vector.direction())
 
-    # Grounded check
-    print("Is grounded:", is_grounded(obs, blocks))
+        if grounded_this_update and agent_position_int == b.position() and b not in blocks_walked_on:
+            blocks_walked_on.add(b)
+    print("Blocks walked on:", len(blocks_walked_on), blocks_walked_on)
 
     # Velocity vector
     print("Velocity:", agent_position - prev_agent_position)
