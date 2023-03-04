@@ -133,7 +133,12 @@ def get_state(agent_host) -> "tuple(float, float, float, float, float, float, fl
     # NOTE: Getting the observations multiple times on the same frame most likely causes the out of bounds exception.
     # Get agent observations for this update.
     world_state = agent_host.getWorldState()
-    obs_text = world_state.observations[-1].text
+
+    try:
+        obs_text = world_state.observations[-1].text
+    except IndexError as err:
+        raise ValueError("Unable to get new agent state.")
+
     obs = json.loads(obs_text) # most recent observation
     # Can check if observation doesn't contain necessary data.
     if not u'XPos' in obs or not u'ZPos' in obs:
@@ -321,7 +326,10 @@ agent_host.sendCommand("move 0.5")
 for update_num in range(20):
     print("Update num:", update_num)
 
-    cur_state = get_state(agent_host)
+    try:
+        cur_state = get_state(agent_host)
+    except ValueError as err:
+        print(repr(err))
     # TODO: do something with the current state
 
     time.sleep(0.05)
