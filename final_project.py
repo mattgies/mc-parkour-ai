@@ -60,8 +60,8 @@ if NUM_ACTIONS != len(actionNamesToActionsMap):
 
 # rewards
 rewardsMap: dict() = {
-    "steppedOnPreviouslySeenBlock": -1,
-    "newBlockSteppedOn": 50,
+    "steppedOnPreviouslySeenBlock": -0.2,
+    "newBlockSteppedOn": 200,
     "death": -1000.0,
     "goalReached": 2500
 }
@@ -192,13 +192,14 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
 
     # Get grid observations
     blocks = get_nearby_walkable_blocks(obs)
-    direction_to_closest_block = Vector(0,0,0)
+    direction_to_closest_unwalked_block = Vector(0,0,0)
     closest_block_distance = 10 ** 4
     for b in blocks:
-        direction = b.position() - agent_position
-        if direction.magnitude() < closest_block_distance:
-            direction_to_closest_block = direction
-            closest_block_distance = direction.magnitude()
+        if b not in blocks_walked_on:
+            direction = b.position() - agent_position
+            if direction.magnitude() < closest_block_distance:
+                direction_to_closest_unwalked_block = direction
+                closest_block_distance = direction.magnitude()
 
     # Velocity vector
     velocity = agent_position - prev_agent_position
@@ -207,9 +208,9 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
     # Facing direction. Doesn't need to look up or down
     yaw = obs[u'Yaw']
 
-    return (direction_to_closest_block.x,
-            direction_to_closest_block.y,
-            direction_to_closest_block.z,
+    return (direction_to_closest_unwalked_block.x,
+            direction_to_closest_unwalked_block.y,
+            direction_to_closest_unwalked_block.z,
             velocity.x,
             velocity.y,
             velocity.z,
