@@ -105,6 +105,9 @@ target_model = create_model()
 # global agent variables
 prev_agent_position = Vector(0.5, 227.0, 0.5) # Where the player was last update
 blocks_walked_on = set()
+## Used for testing prints
+reward_of_all_episodes = 0
+episodes_that_succeeded = []
 
 # functions
 def GetMissionXML(summary=""):
@@ -196,9 +199,6 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
         if direction.magnitude() < closest_block_distance:
             direction_to_closest_block = direction
             closest_block_distance = direction.magnitude()
-
-        if grounded_this_update and agent_position_int == b.position() + Vector(0,1,0) and b not in blocks_walked_on:
-            blocks_walked_on.add(b)
 
     # Velocity vector
     velocity = agent_position - prev_agent_position
@@ -299,8 +299,13 @@ def calculate_reward(raw_state):
     blocks = get_nearby_walkable_blocks(obs)
     onOldBlock = False
     for b in blocks:
-        if grounded_this_update and agent_position_int == b.position() + Vector(0,1,0) and b in blocks_walked_on:
-            onOldBlock = True
+        if grounded_this_update and agent_position_int == b.position() + Vector(0,1,0):
+            # We have found the block we're stepping on, if any.
+            # See if we have stepped on it before.
+            if b in blocks_walked_on:
+                onOldBlock = True
+            else:
+                blocks_walked_on.add(b)
             break
     if onOldBlock:
         reward += rewardsMap["steppedOnPreviouslySeenBlock"]
@@ -347,6 +352,8 @@ def remove_first_entry_in_replay():
 def training_loop(agent_host):
     reset_replay()
     
+    global blocks_walked_on 
+    blocks_walked_on.clear()
     episode_reward = 0
     episode_done = False
     frame_number = 0
@@ -380,20 +387,18 @@ def training_loop(agent_host):
                 break
         frame_number += 1
         
-        # print(next_state_raw.observations[-1].text)
         if is_dead:
             next_state = cur_state
             reward, episode_done = rewardsMap["death"], True
         elif not goal_reached:
             next_state = format_state(next_state_raw)
             reward, episode_done = calculate_reward(next_state_raw)
-            episode_reward += reward
         else:
             next_state = cur_state
             reward, episode_done = rewardsMap["goalReached"], True
+        episode_reward += reward
 
         add_entry_to_replay(next_state, action, episode_reward)
-        # print(episode_reward)
         
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
             random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
@@ -425,6 +430,15 @@ def training_loop(agent_host):
             remove_first_entry_in_replay()
 
         if episode_done:
+            # Add values to testing prints
+            global reward_of_all_episodes
+            global episodes_that_succeeded
+            global i
+            reward_of_all_episodes += episode_reward
+            if goal_reached:
+                episodes_that_succeeded.append(i)
+            print("Episode reward:", episode_reward, "Average reward:", (reward_of_all_episodes / (i+1)), "Successful episodes:", episodes_that_succeeded)
+
             break
 
 
