@@ -19,11 +19,18 @@ import xmlgen
 import parkourcourse2 as course
 import observationgrid1 as obsgrid
 from worldClasses import *
+import matplotlib.pyplot as plt
 # stepped_on_blocks = {Block()}
 
 x = tf.constant(4)
 for i in range(5):
     print(x)
+
+
+# METRICS
+loss_function_returns = []
+episode_rewards = []
+episode_reward_running_avgs = []
 
 
 
@@ -32,8 +39,9 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 5000
-NUM_EPISODES = 500
+NUM_EPISODES = 5
 AVERAGE_REWARD_NEEDED_TO_END = 500
+BATCH_SIZE = 40
 
 # training parameters
 EPSILON = 0.2
@@ -61,15 +69,14 @@ if NUM_ACTIONS != len(actionNamesToActionsMap):
 
 # rewards
 rewardsMap: dict() = {
-    "steppedOnPreviouslySeenBlock": -0.2,
+    "steppedOnPreviouslySeenBlock": -5,
     "newBlockSteppedOn": 200,
     "death": -1000.0,
-    "goalReached": 2500
+    "goalReached": 10000
 }
 
 
 # replay values
-BATCH_SIZE = 40
 past_states = []
 past_actions = []
 past_rewards = []
@@ -426,6 +433,7 @@ def training_loop(agent_host):
                 original_q_vals = model(sampled_states)
                 original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
                 loss = loss_function(bellman_updated_q_vals, original_q_vals_for_actions)
+                loss_function_returns.append(loss)
             
             gradients = tape.gradient(loss, model.trainable_variables)
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))
@@ -446,6 +454,9 @@ def training_loop(agent_host):
             global episodes_that_succeeded
             global i
             reward_of_all_episodes += episode_reward
+            episode_rewards.append(episode_reward)
+            episode_reward_running_avgs.append(reward_of_all_episodes / (i+1))
+
             if goal_reached:
                 episodes_that_succeeded.append(i)
             print("Episode reward:", episode_reward, "Average reward:", (reward_of_all_episodes / (i+1)), "Successful episodes:", episodes_that_succeeded)
@@ -471,6 +482,7 @@ my_mission = MalmoPython.MissionSpec(GetMissionXML(), True)
 
 # Attempt to start a mission:
 max_retries = 3
+print(target_model.get_weights())
 for i in range(NUM_EPISODES):
     if reward_of_all_episodes / (i+1) > AVERAGE_REWARD_NEEDED_TO_END:
         print("AI too good")
@@ -506,3 +518,11 @@ for i in range(NUM_EPISODES):
     # testing training loop function
     training_loop(agent_host)
     time.sleep(0.5)
+
+print(target_model.get_weights())
+plt.plot(loss_function_returns)
+plt.show()
+plt.plot(episode_rewards)
+plt.show()
+plt.plot(episode_reward_running_avgs)
+plt.show()
