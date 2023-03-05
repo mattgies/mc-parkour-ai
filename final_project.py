@@ -33,9 +33,10 @@ MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 5000
 NUM_EPISODES = 500
+AVERAGE_REWARD_NEEDED_TO_END = 500
 
 # training parameters
-EPSILON = 0.5
+EPSILON = 0.2
 GAMMA = 0.9
 optimizer = keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0)
 loss_function = keras.losses.MeanSquaredError()
@@ -247,6 +248,13 @@ def choose_action(ep, model, state):
         return action
 
 
+def obs_is_valid(raw_state):
+    obs_text = raw_state.observations[-1].text
+    obs = json.loads(obs_text)
+    if not u'XPos' in obs or not u'YPos' in obs or not u'ZPos' in obs:
+        return False
+    return True
+
 
 def take_action(action, agent_host):
     """
@@ -361,7 +369,7 @@ def training_loop(agent_host):
     episode_done = False
     frame_number = 0
     cur_state_raw = agent_host.getWorldState()
-    while len(cur_state_raw.observations) == 0:
+    while (len(cur_state_raw.observations) == 0) or (not obs_is_valid(cur_state_raw)):
         cur_state_raw = agent_host.getWorldState()
     cur_state = format_state(cur_state_raw)
 
@@ -376,7 +384,7 @@ def training_loop(agent_host):
         goal_reached = False
         is_dead = False
         next_state_raw = agent_host.getWorldState()
-        while len(next_state_raw.observations) == 0:
+        while (len(next_state_raw.observations) == 0) or (not obs_is_valid(next_state_raw)):
             next_state_raw = agent_host.getWorldState()
             if (not next_state_raw.is_mission_running):
                 # TODO: Hack to check if player has reached the goal or not. There are multiple ways to end the mission
@@ -446,7 +454,6 @@ def training_loop(agent_host):
 
 
 # Create default Malmo objects:
-expected_reward = 3390
 my_client_pool = MalmoPython.ClientPool()
 my_client_pool.add(MalmoPython.ClientInfo("127.0.0.1", 10000))
 agent_host = MalmoPython.AgentHost()
@@ -465,6 +472,9 @@ my_mission = MalmoPython.MissionSpec(GetMissionXML(), True)
 # Attempt to start a mission:
 max_retries = 3
 for i in range(NUM_EPISODES):
+    if reward_of_all_episodes / (i+1) > AVERAGE_REWARD_NEEDED_TO_END:
+        print("AI too good")
+
     print("Episode " + str(i+1) + " of " + str(NUM_EPISODES))
     
     my_mission_record = MalmoPython.MissionRecordSpec()
