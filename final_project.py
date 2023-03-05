@@ -176,8 +176,10 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
 
     obs = json.loads(obs_text) # most recent observation
     # Can check if observation doesn't contain necessary data.
-    if not u'XPos' in obs or not u'ZPos' in obs:
+    if not u'XPos' in obs or not u'YPos' in obs or not u'ZPos' in obs:
         print("Does not exist")
+        # TODO: Make something appropriate for when we are unable to get the agent position.
+        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, False)  
     # else:
     #     current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
     #     print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos'])))
