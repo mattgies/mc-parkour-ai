@@ -26,7 +26,7 @@ def observationGrids(observation_grids):
         genstr += '<Grid name="%s">\n\t<min x="%d" y="%d" z="%d"/>\n\t<max x="%d" y="%d" z="%d"/>\n</Grid>\n' % (grid["name"], min.x, min.y, min.z, max.x, max.y, max.z)
     return genstr
 
-def XMLGenerator(cube_coords, observation_grids, goal_coords):
+def XMLGenerator(cube_coords, observation_grids, goal_coords, goal_reward):
     xmlstring = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
     <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
         <About>
@@ -71,7 +71,7 @@ def XMLGenerator(cube_coords, observation_grids, goal_coords):
                 </ObservationFromNearbyEntities>
                 <ObservationFromFullInventory/>
                 <RewardForTouchingBlockType>
-                    <Block reward="2500.0" type="diamond_block" behaviour="onceOnly"/>
+                    <Block reward="''' + str(goal_reward) + '''" type="diamond_block" behaviour="onceOnly"/>
                 </RewardForTouchingBlockType>
                 <AgentQuitFromTouchingBlockType>
                     <Block type="diamond_block" />

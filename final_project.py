@@ -20,11 +20,6 @@ import parkourcourse2 as course
 import observationgrid1 as obsgrid
 from worldClasses import *
 import matplotlib.pyplot as plt
-# stepped_on_blocks = {Block()}
-
-x = tf.constant(4)
-for i in range(5):
-    print(x)
 
 
 # METRICS
@@ -38,8 +33,8 @@ episode_reward_running_avgs = []
 MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
-UPDATE_TARGET_AFTER_N_FRAMES = 5000
-NUM_EPISODES = 5
+UPDATE_TARGET_AFTER_N_FRAMES = 100
+NUM_EPISODES = 150
 AVERAGE_REWARD_NEEDED_TO_END = 500
 BATCH_SIZE = 40
 
@@ -64,15 +59,13 @@ actionNamesToActionsMap: dict() = {
 }
 actionNames: list() = [action for action in actionNamesToActionsMap]
 NUM_ACTIONS: int = len(actionNames)
-if NUM_ACTIONS != len(actionNamesToActionsMap):
-    raise IndexError("1+ actions are missing from actionNames or the actionNamesToActionsMap")
 
 # rewards
 rewardsMap: dict() = {
-    "steppedOnPreviouslySeenBlock": -5,
+    "steppedOnPreviouslySeenBlock": -0.2,
     "newBlockSteppedOn": 200,
-    "death": -1000.0,
-    "goalReached": 10000
+    "death": -100.0,
+    "goalReached": 5000
 }
 
 
@@ -122,7 +115,8 @@ def GetMissionXML(summary=""):
     return xmlgen.XMLGenerator(
         cube_coords=course.CUBE_COORDS,
         observation_grids=obsgrid.OBSERVATION_GRIDS,
-        goal_coords=course.GOAL_COORDS
+        goal_coords=course.GOAL_COORDS,
+        goal_reward=rewardsMap["goalReached"]
     )
 
 def get_nearby_walkable_blocks(observations):
@@ -184,10 +178,10 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
 
     obs = json.loads(obs_text) # most recent observation
     # Can check if observation doesn't contain necessary data.
-    if not u'XPos' in obs or not u'YPos' in obs or not u'ZPos' in obs:
-        print("Does not exist")
-        # TODO: Make something appropriate for when we are unable to get the agent position.
-        return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, False)  
+    # if not u'XPos' in obs or not u'YPos' in obs or not u'ZPos' in obs:
+    #     print("Does not exist")
+    #     # TODO: Make something appropriate for when we are unable to get the agent position.
+    #     return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, False)  
     # else:
     #     current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
     #     print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos'])))
@@ -238,16 +232,17 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
 #     pass
 
 
-def choose_action(ep, model, state):
+def choose_action(model, state):
     """
     Called once per frame, to determine the next action to take given the current state
     Uses the value of epsilon to determine whether to choose a random action or the best action (via tf.argmax)
     
     if we want: update epsilon to decay toward its minimum
     """
-    # return actionNames.index("moveFull")
+    # return np.random.choice([actionNames.index("moveFull"), actionNames.index("jumpFull")])
+    # return np.random.choice([actionNames.index("moveFull"), actionNames.index("jumpFull"), actionNames.index("turnLeft"), actionNames.index("stopTurn")])
     
-    if np.random.rand(1)[0] < ep:
+    if np.random.rand(1)[0] < EPSILON:
         return np.random.choice(NUM_ACTIONS)
     else:
         action_probs = model(tf.expand_dims(tf.convert_to_tensor(state), 0), training=False)
@@ -295,10 +290,6 @@ def calculate_reward(raw_state):
     # check for game finished
     grid = obs.get(u'floor5x5x2')  
     player_height = float(obs[u'YPos'])
-
-    if (player_height < 100):
-        reward += rewardsMap["death"]
-        return reward, True
 
     player_height_rounded = int(player_height)
     block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)] # TODO: Make this use variables or something
@@ -383,7 +374,7 @@ def training_loop(agent_host):
     for _ in range(MAX_ACTIONS_PER_EPISODE):
         if len(past_states) > 0:
             cur_state = past_states[-1]
-        action = choose_action(EPSILON, model, cur_state)
+        action = choose_action(model, cur_state)
         take_action(action, agent_host)
 
         # time.sleep(0.05)
@@ -395,9 +386,8 @@ def training_loop(agent_host):
             next_state_raw = agent_host.getWorldState()
             if (not next_state_raw.is_mission_running):
                 # TODO: Hack to check if player has reached the goal or not. There are multiple ways to end the mission
-                if cur_state[7]:
-                    print("mission stopped running")
-                    print(next_state_raw.rewards[0].getValue())
+                if(next_state_raw.rewards and next_state_raw.rewards[-1].getValue() == rewardsMap["goalReached"]):
+                # if cur_state[7]: # ISSUE: if player is jumping onto the diamond block, the mission ends but the reward is not given. it's only given via this condition if the agent walks onto the goal block
                     goal_reached = True
                 else:
                     print("Agent has died or fallen off the map")
@@ -519,10 +509,33 @@ for i in range(NUM_EPISODES):
     training_loop(agent_host)
     time.sleep(0.5)
 
-print(target_model.get_weights())
-plt.plot(loss_function_returns)
+    # decay epsilon (model should be more confident)
+    EPSILON -= (EPSILON / NUM_EPISODES)
+    print(EPSILON)
+
+
+plt.title("Loss function return value over time")
+plt.xlabel("# call to loss function")
+plt.ylabel("Loss function return value (log scale)")
+plt.semilogy(range(1, len(loss_function_returns) + 1), loss_function_returns, linewidth=2.0, c="red")
 plt.show()
-plt.plot(episode_rewards)
+
+plt.title("Raw reward per episode over episode iterations")
+plt.xlabel("Episode #")
+plt.ylabel("Cumulative reward")
+plt.plot(range(1, NUM_EPISODES+1), episode_rewards, linewidth=2.0, c="green")
 plt.show()
-plt.plot(episode_reward_running_avgs)
+
+
+plt.title("Average reward over episode iterations")
+plt.xlabel("Episode #")
+plt.ylabel("Average reward of current episode and past episodes")
+plt.plot(range(1, NUM_EPISODES+1), episode_reward_running_avgs, linewidth=2.0, c="blue")
 plt.show()
+
+
+with open("./training_results.py", 'w') as f:
+    f.write(str(episode_rewards) + "\n")
+    f.write(str(episode_reward_running_avgs) + "\n")
+
+tf.keras.utils.plot_model(target_model, to_file="model.png", show_shapes=True, rankdir="LR", dpi=300)
