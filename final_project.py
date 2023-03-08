@@ -149,7 +149,7 @@ def is_grounded(observations):
     player_height = float(observations[u'YPos'])
     player_height_rounded = int(player_height)
     block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)] # TODO: Make this use variables or something
-    return block_name_below_player != "lava" and block_name_below_player != "air" and (abs(player_height - player_height_rounded) <= 0.01)
+    return block_name_below_player != "lava" and block_name_below_player != "air" and (abs(player_height - player_height_rounded) <= 0.1)
 
 
 def format_state(raw_state) -> "tuple(float, float, float, float, float, float, float, bool)":
@@ -337,6 +337,8 @@ def calculate_reward(raw_state):
             elif b in blocks_walked_on:
                 return rewardsMap["steppedOnPreviouslySeenBlock"], False
             else:
+                # TODO: Testing print to see when Agent thinks it's on a new block
+                print("\nStepped on a new block:", b.name, b.position())
                 blocks_walked_on.add(b)
             break
     return rewardsMap["newBlockSteppedOn"], False
@@ -410,7 +412,7 @@ def training_loop(agent_host):
                 # if cur_state[7]: # ISSUE: if player is jumping onto the diamond block, the mission ends but the reward is not given. it's only given via this condition if the agent walks onto the goal block
                     goal_reached = True
                 else:
-                    print("Agent has died or fallen off the map")
+                    # Agent has died or fallen off the map
                     is_dead = True
                 break
         frame_number += 1
