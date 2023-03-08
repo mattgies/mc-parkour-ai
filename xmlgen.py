@@ -27,6 +27,7 @@ def observationGrids(observation_grids):
     return genstr
 
 def XMLGenerator(cube_coords, observation_grids, goal_coords, goal_reward):
+    observation_grids.append({"name": "block_below_agent", "min": Vector(0,-1,0), "max": Vector(0,-1,0)})
     xmlstring = '''<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
     <Mission xmlns="http://ProjectMalmo.microsoft.com" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
         <About>

@@ -34,9 +34,11 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 100
+NUM_EPISODES = 200
 AVERAGE_REWARD_NEEDED_TO_END = 500
 BATCH_SIZE = 40
+
+GROUNDED_DISTANCE_THRESHOLD = 0.1 # The highest distance above a block for which the agent is considered to be stepping on it.
 
 # training parameters
 EPSILON = 0.1
@@ -105,6 +107,7 @@ target_model = create_model()
 
 # global agent variables
 prev_agent_position = Vector(0.5, 227.0, 0.5) # Where the player was last update
+prev_block_below_agent = Block(0,0,0,"air") # What block was below the player last update
 blocks_walked_on = set()
 ## Used for testing prints
 reward_of_all_episodes = 0
@@ -140,16 +143,27 @@ def get_nearby_walkable_blocks(observations):
     return result
 
 
+def get_block_below_agent(observations):
+    """
+    Get an object representing the block beneath the agent's position.
+    Does not count the block that the agent is occupying right now.
+
+    returns: Block
+    """
+    block_name = observations.get(u'block_below_agent')[0]
+    player_location = [int(observations[u'XPos']), int(observations[u'YPos']), int(observations[u'ZPos'])]
+    return Block(player_location[0], player_location[1]-1, player_location[2], block_name)
+
+
 def is_grounded(observations):
     """
     returns: bool: true if touching ground
     """
-    # TODO: Make own "IsClose" function for float math stuff
     grid = observations.get(u'floor5x5x2')  
     player_height = float(observations[u'YPos'])
     player_height_rounded = int(player_height)
-    block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)] # TODO: Make this use variables or something
-    return block_name_below_player != "lava" and block_name_below_player != "air" and (abs(player_height - player_height_rounded) <= 0.1)
+    block_name_below_player = get_block_below_agent(observations).name # grid[5 * int(5 / 2) + int(5 / 2)] 
+    return block_name_below_player != "lava" and block_name_below_player != "air" and (abs(player_height - player_height_rounded) <= GROUNDED_DISTANCE_THRESHOLD)
 
 
 def format_state(raw_state) -> "tuple(float, float, float, float, float, float, float, bool)":
@@ -297,8 +311,10 @@ def calculate_reward(raw_state):
     returns: int, bool, integer reward and whether episode is done or not
     """
     reward = 0
+    episode_done = False
 
     global blocks_walked_on
+    global prev_block_below_agent
     world_state = raw_state
 
     obs_text = world_state.observations[-1].text
@@ -323,25 +339,60 @@ def calculate_reward(raw_state):
     if obs.get(u"Life") < full_life:
         return 0, False
 
-    if (not grounded_this_update):
+    # TODO: Trying to see if we were grounded in between this update and the previous.
+    prev_distance_above_block = prev_agent_position.y - int(prev_agent_position.y)
+    cur_distance_above_block = float(obs[u'YPos']) - agent_position_int.y
+    y_position_delta_upper_bound = 0.45
+    grounded_between_updates = False
+    if ((block_name_below_player == "stone" or prev_block_below_agent.name == "stone") and
+        (GROUNDED_DISTANCE_THRESHOLD < prev_distance_above_block < y_position_delta_upper_bound) and 
+        (GROUNDED_DISTANCE_THRESHOLD < cur_distance_above_block < y_position_delta_upper_bound)):
+        # For this update and the previous, the agent was hovering above the walkable block below it.
+        # We assume that they must have touched the ground between the updates.
+        # TODO: Simplify to one line
+        grounded_between_updates = True
+
+    if (not grounded_this_update and not grounded_between_updates):
         return 0, False
 
-    blocks = get_nearby_walkable_blocks(obs)
-    onOldBlock = False
-    for b in blocks:
-        if agent_position_int == b.position() + Vector(0,1,0):
-            # We have found the block we're stepping on, if any.
-            # See if we have stepped on it before.
-            if b.name != "stone":
-                return 0, False
-            elif b in blocks_walked_on:
-                return rewardsMap["steppedOnPreviouslySeenBlock"], False
-            else:
-                # TODO: Testing print to see when Agent thinks it's on a new block
-                print("\nStepped on a new block:", b.name, b.position())
-                blocks_walked_on.add(b)
-            break
-    return rewardsMap["newBlockSteppedOn"], False
+    block_stepping_on = get_block_below_agent(obs)
+    if (grounded_between_updates and prev_block_below_agent.name != "air" and prev_block_below_agent.name != "lava" 
+        and prev_block_below_agent not in blocks_walked_on):
+        # We were on a block between this update and the last. We only recorded that block from the previous update,
+        # so use the stored value when adding which blocks we've stepped on.
+        print("Stepped on a new block:", prev_block_below_agent.name, prev_block_below_agent.position(), "last update")
+        blocks_walked_on.add(prev_block_below_agent)
+        reward += rewardsMap["newBlockSteppedOn"]
+    if block_stepping_on.name != "air" and block_stepping_on.name != "lava":
+        # We have found the block we're stepping on, if any.
+        # See if we have stepped on it before.
+        if block_stepping_on.name != "stone":
+            reward += 0
+            episode_done = False
+        elif block_stepping_on in blocks_walked_on:
+            reward += rewardsMap["steppedOnPreviouslySeenBlock"]
+            episode_done = False
+        else:
+            # TODO: Testing print to see when Agent thinks it's on a new block
+            print("\nStepped on a new block:", block_stepping_on.name, block_stepping_on.position())
+            blocks_walked_on.add(block_stepping_on)
+            reward += rewardsMap["newBlockSteppedOn"]
+            episode_done = False
+
+    # for b in blocks:
+    #     if agent_position_int == b.position() + Vector(0,1,0):
+    #         # We have found the block we're stepping on, if any.
+    #         # See if we have stepped on it before.
+    #         if b.name != "stone":
+    #             return 0, False
+    #         elif b in blocks_walked_on:
+    #             return rewardsMap["steppedOnPreviouslySeenBlock"], False
+    #         else:
+    #             # TODO: Testing print to see when Agent thinks it's on a new block
+    #             print("\nStepped on a new block:", b.name, b.position())
+    #             blocks_walked_on.add(b)
+    #         break
+    return reward, episode_done
 
 
 def update_target_model():
@@ -424,6 +475,10 @@ def training_loop(agent_host):
         elif not goal_reached:
             next_state = format_state(next_state_raw)
             reward, episode_done = calculate_reward(next_state_raw)
+
+            # Remember previous block. Used in calculate_reward
+            global prev_block_below_agent
+            prev_block_below_agent = get_block_below_agent(json.loads(next_state_raw.observations[-1].text))
         else:
             next_state = cur_state
             reward, episode_done = rewardsMap["goalReached"] / episode_time_taken, True
@@ -438,7 +493,7 @@ def training_loop(agent_host):
             sampled_rewards = np.array([past_rewards[i] for i in random_indices])
             
             # next_state = tf.convert_to_tensor(next_state)
-            predicted_future_rewards = target_model.predict(sampled_states) # prints to stdout
+            predicted_future_rewards = target_model.predict(sampled_states, verbose=0) # prints to stdout
             bellman_updated_q_vals = sampled_rewards + GAMMA * tf.reduce_max(predicted_future_rewards, axis=1)
             action_mask = tf.one_hot(sampled_actions, NUM_ACTIONS)
 
