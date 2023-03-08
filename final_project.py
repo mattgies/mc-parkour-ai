@@ -34,14 +34,14 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 150
+NUM_EPISODES = 100
 AVERAGE_REWARD_NEEDED_TO_END = 500
 BATCH_SIZE = 40
 
 # training parameters
-EPSILON = 0.2
-GAMMA = 0.9
-optimizer = keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0)
+EPSILON = 0.1
+GAMMA = 1.0
+optimizer = keras.optimizers.Adam(learning_rate=0.00025, clipnorm=1.0)
 loss_function = keras.losses.MeanSquaredError()
 
 
@@ -57,15 +57,15 @@ actionNamesToActionsMap: dict() = {
     "turnLeft": "turn -1.0",
     "stopTurn": "turn 0.0"
 }
-actionNames: list() = [action for action in actionNamesToActionsMap]
+actionNames: list() = list(actionNamesToActionsMap.keys())
 NUM_ACTIONS: int = len(actionNames)
 
 # rewards
 rewardsMap: dict() = {
-    "steppedOnPreviouslySeenBlock": -0.2,
-    "newBlockSteppedOn": 200,
-    "death": -100.0,
-    "goalReached": 5000
+    "steppedOnPreviouslySeenBlock": -5, # -0.2,
+    "newBlockSteppedOn": 1000,
+    "death": -50.0,
+    "goalReached": 50000
 }
 
 
@@ -82,7 +82,7 @@ episode_number = 0
 
 # models
 def create_model():
-    input_shape = (8,) # 3 for closest block, 3 for velocity vector, 2 for two boolean inputs
+    input_shape = (10,) # 3 for closest block, 3 for velocity vector, 2 for two boolean inputs
 
     inputs = layers.Input(shape=input_shape)
 
@@ -212,14 +212,37 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
     # Facing direction. Doesn't need to look up or down
     yaw = obs[u'Yaw']
 
-    return (direction_to_closest_unwalked_block.x,
-            direction_to_closest_unwalked_block.y,
-            direction_to_closest_unwalked_block.z,
-            velocity.x,
-            velocity.y,
-            velocity.z,
-            yaw,
-            grounded_this_update)
+    # distance from edge of block
+    # Y axis is up, so only care about X and Z
+    agent_pos_with_zeroed_y = Vector(agent_position.x, 0, agent_position.z)
+    edge1 = Vector(math.ceil(agent_position.x), 0, math.ceil(agent_position.z))
+    edge2 = Vector(math.ceil(agent_position.x), 0, math.floor(agent_position.z))
+    edge3 = Vector(math.floor(agent_position.x), 0, math.ceil(agent_position.z))
+    edge4 = Vector(math.floor(agent_position.x), 0, math.floor(agent_position.z))
+    edges = [edge1, edge2, edge3, edge4]
+    distance_from_edge_of_cur_block = 10 ** 4
+    closest_edge = None
+    for e in edges:
+        dist_from_e = (e - agent_pos_with_zeroed_y).magnitude()
+        if dist_from_e < distance_from_edge_of_cur_block:
+            distance_from_edge_of_cur_block = dist_from_e
+            closest_edge = e
+    # print("Agent position", agent_position)
+    # print("Closest edge", closest_edge)
+    # print("Distance from edge", distance_from_edge_of_cur_block)
+
+    return (
+        direction_to_closest_unwalked_block.x,
+        direction_to_closest_unwalked_block.y,
+        direction_to_closest_unwalked_block.z,
+        direction_to_closest_unwalked_block.magnitude(),
+        distance_from_edge_of_cur_block,
+        velocity.x,
+        velocity.y,
+        velocity.z,
+        yaw,
+        grounded_this_update
+    )
     
 
 # Don't think this is necessary because training loop function just loops episode as well
@@ -278,13 +301,8 @@ def calculate_reward(raw_state):
     global blocks_walked_on
     world_state = raw_state
 
-    # try:
     obs_text = world_state.observations[-1].text
-    # except IndexError as err:
-    #     raise ValueError("Unable to get new agent state.")
-
     obs = json.loads(obs_text) # most recent observation
-    # Can check if observation doesn't contain necessary data.
 
     # need to update, but very rudimentary reward checking system
     # check for game finished
@@ -295,12 +313,15 @@ def calculate_reward(raw_state):
     block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)] # TODO: Make this use variables or something
     if abs(player_height - player_height_rounded) <= 0.01:
         if(block_name_below_player == "diamond_block"):
-            reward += rewardsMap["goalReached"]
-            return reward, True
+            return rewardsMap["goalReached"], True
     
     agent_position_int = Vector(int(obs[u'XPos']), int(obs[u'YPos']), int(obs[u'ZPos']))
         
     grounded_this_update = is_grounded(obs)
+
+    full_life = 20.0
+    if obs.get(u"Life") < full_life:
+        return 0, False
 
     if (not grounded_this_update):
         return 0, False
@@ -308,20 +329,17 @@ def calculate_reward(raw_state):
     blocks = get_nearby_walkable_blocks(obs)
     onOldBlock = False
     for b in blocks:
-        if grounded_this_update and agent_position_int == b.position() + Vector(0,1,0):
+        if agent_position_int == b.position() + Vector(0,1,0):
             # We have found the block we're stepping on, if any.
             # See if we have stepped on it before.
-            if b in blocks_walked_on:
-                onOldBlock = True
+            if b.name != "stone":
+                return 0, False
+            elif b in blocks_walked_on:
+                return rewardsMap["steppedOnPreviouslySeenBlock"], False
             else:
                 blocks_walked_on.add(b)
             break
-    if onOldBlock:
-        reward += rewardsMap["steppedOnPreviouslySeenBlock"]
-    else:
-        reward += rewardsMap["newBlockSteppedOn"]
-    
-    return reward, False
+    return rewardsMap["newBlockSteppedOn"], False
 
 
 def update_target_model():
@@ -363,10 +381,12 @@ def training_loop(agent_host):
     
     global blocks_walked_on 
     blocks_walked_on.clear()
-    episode_reward = 0
+    episode_reward = -rewardsMap["newBlockSteppedOn"] # zeroes out the reward that's given for just stepping on the first block (which is automatic, has nothing to do with the model's choices)
     episode_done = False
     frame_number = 0
     cur_state_raw = agent_host.getWorldState()
+    episode_start_time = time.time()
+
     while (len(cur_state_raw.observations) == 0) or (not obs_is_valid(cur_state_raw)):
         cur_state_raw = agent_host.getWorldState()
     cur_state = format_state(cur_state_raw)
@@ -395,15 +415,16 @@ def training_loop(agent_host):
                 break
         frame_number += 1
         
+        episode_time_taken = time.time() - episode_start_time
         if is_dead:
             next_state = cur_state
-            reward, episode_done = rewardsMap["death"], True
+            reward, episode_done = rewardsMap["death"] / episode_time_taken, True
         elif not goal_reached:
             next_state = format_state(next_state_raw)
             reward, episode_done = calculate_reward(next_state_raw)
         else:
             next_state = cur_state
-            reward, episode_done = rewardsMap["goalReached"], True
+            reward, episode_done = rewardsMap["goalReached"] / episode_time_taken, True
         episode_reward += reward
 
         add_entry_to_replay(next_state, action, episode_reward)
@@ -472,10 +493,10 @@ my_mission = MalmoPython.MissionSpec(GetMissionXML(), True)
 
 # Attempt to start a mission:
 max_retries = 3
-print(target_model.get_weights())
 for i in range(NUM_EPISODES):
     if reward_of_all_episodes / (i+1) > AVERAGE_REWARD_NEEDED_TO_END:
         print("AI too good")
+        # break
 
     print("Episode " + str(i+1) + " of " + str(NUM_EPISODES))
     
@@ -512,6 +533,10 @@ for i in range(NUM_EPISODES):
     # decay epsilon (model should be more confident)
     EPSILON -= (EPSILON / NUM_EPISODES)
     print(EPSILON)
+
+
+
+
 
 
 plt.title("Loss function return value over time")
