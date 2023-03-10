@@ -34,7 +34,7 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 200
+NUM_EPISODES = 500
 AVERAGE_REWARD_NEEDED_TO_END = 500
 BATCH_SIZE = 40
 
@@ -43,6 +43,8 @@ GROUNDED_DISTANCE_THRESHOLD = 0.1 # The highest distance above a block for which
 # training parameters
 EPSILON = 0.1
 GAMMA = 1.0
+ALPHA = 0.5 # = [0,1], How much prioritization is used, with 0 being no prioritization
+BETA = 0 # = [0,1], Annealing factor (I don't know what this is)
 optimizer = keras.optimizers.Adam(learning_rate=0.00025, clipnorm=1.0)
 loss_function = keras.losses.MeanSquaredError()
 
@@ -75,6 +77,7 @@ rewardsMap: dict() = {
 past_states = []
 past_actions = []
 past_rewards = []
+past_priorities = []
 episode_reward = 0
 frame_number = 0
 episode_number = 0
@@ -401,7 +404,7 @@ def update_target_model():
     target_model.set_weights(model.get_weights())
 
 
-def add_entry_to_replay(state, action, reward):
+def add_entry_to_replay(state, action, reward, priority):
     """
     Called every time the AI takes an action
     Updates the replay buffers in place
@@ -411,6 +414,7 @@ def add_entry_to_replay(state, action, reward):
     past_states.append(state)
     past_actions.append(action)
     past_rewards.append(reward)
+    past_priorities.append(priority)
 
 
 def reset_replay():
@@ -426,11 +430,15 @@ def remove_first_entry_in_replay():
     del past_states[0]
     del past_actions[0]
     del past_rewards[0]
+    del past_priorities[0]
     # maybe print something
 
 
 def training_loop(agent_host):
     reset_replay()
+
+    global past_states
+    print(len(past_actions), len(past_rewards), len(past_states))
     
     global blocks_walked_on 
     blocks_walked_on.clear()
@@ -484,10 +492,24 @@ def training_loop(agent_host):
             reward, episode_done = rewardsMap["goalReached"] / episode_time_taken, True
         episode_reward += reward
 
-        add_entry_to_replay(next_state, action, episode_reward)
+        # Calculate priority for prio replay
+        if len(past_priorities) <= 0:
+            priority = 1.0
+        else:
+            priority = max(past_priorities)
+
+        add_entry_to_replay(next_state, action, episode_reward, priority)
         
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
-            random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
+            # random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
+            # TODO: I'm pretty sure this isn't the correct distribution as described on the bottom of 
+            # page 4 of the paper, under "Implementation". I don't know what it's actually asking for.
+            random_indices = []
+            for j in range(BATCH_SIZE):
+                segment_min = int(j / BATCH_SIZE * len(past_states))
+                segment_max = int((j+1) / BATCH_SIZE * len(past_states))
+                random_indices.append(np.random.choice(range(segment_min, segment_max)))
+
             sampled_states = np.array([past_states[i] for i in random_indices])
             sampled_actions = np.array([past_actions[i] for i in random_indices])
             sampled_rewards = np.array([past_rewards[i] for i in random_indices])
