@@ -78,6 +78,7 @@ past_states = []
 past_actions = []
 past_rewards = []
 past_priorities = []
+importance_sampling_weight = []
 episode_reward = 0
 frame_number = 0
 episode_number = 0
@@ -415,6 +416,7 @@ def add_entry_to_replay(state, action, reward, priority):
     past_actions.append(action)
     past_rewards.append(reward)
     past_priorities.append(priority)
+    importance_sampling_weight.append(1.0)
 
 
 def reset_replay():
@@ -431,6 +433,7 @@ def remove_first_entry_in_replay():
     del past_actions[0]
     del past_rewards[0]
     del past_priorities[0]
+    del importance_sampling_weight[0]
     # maybe print something
 
 
@@ -493,7 +496,7 @@ def training_loop(agent_host):
         episode_reward += reward
 
         # Calculate priority for prio replay
-        if len(past_priorities) <= 0:
+        if len(past_priorities) <= 1:
             priority = 1.0
         else:
             priority = max(past_priorities)
@@ -501,31 +504,62 @@ def training_loop(agent_host):
         add_entry_to_replay(next_state, action, episode_reward, priority)
         
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
-            # random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
+            # Choose past actions from a distribution proportional to their priority.
             # TODO: I'm pretty sure this isn't the correct distribution as described on the bottom of 
             # page 4 of the paper, under "Implementation". I don't know what it's actually asking for.
-            random_indices = []
-            for j in range(BATCH_SIZE):
-                segment_min = int(j / BATCH_SIZE * len(past_states))
-                segment_max = int((j+1) / BATCH_SIZE * len(past_states))
-                random_indices.append(np.random.choice(range(segment_min, segment_max)))
+            p_alpha = np.power(past_priorities, ALPHA)
+            p_alpha /= sum(p_alpha)
+            random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE, p=p_alpha)
 
             sampled_states = np.array([past_states[i] for i in random_indices])
             sampled_actions = np.array([past_actions[i] for i in random_indices])
             sampled_rewards = np.array([past_rewards[i] for i in random_indices])
+
+            # Importance-sampling weight
+            max_weight = max(importance_sampling_weight)
+            for j in random_indices:
+                importance_sampling_weight[j] = (MAX_HISTORY_LENGTH * p_alpha[j]) ** (-BETA) / max_weight
             
             # next_state = tf.convert_to_tensor(next_state)
             predicted_future_rewards = target_model.predict(sampled_states, verbose=0) # prints to stdout
             bellman_updated_q_vals = sampled_rewards + GAMMA * tf.reduce_max(predicted_future_rewards, axis=1)
             action_mask = tf.one_hot(sampled_actions, NUM_ACTIONS)
 
-            with tf.GradientTape() as tape:
+            with tf.GradientTape(persistent=True) as tape:
                 original_q_vals = model(sampled_states)
+
+                # Update priorities
+                # TODO: Don't know if this is correct update (line 11-12 of paper pseudocode)
+                target_prediction_values = target_model(sampled_states)
+                td_error = []
+                for rnd_i in range(len(random_indices)):
+                    td_error.append(float(target_prediction_values[rnd_i, past_actions[rnd_i]] - original_q_vals[rnd_i, past_actions[rnd_i]]))
+                    past_priorities[random_indices[rnd_i]] = abs(td_error[rnd_i])
+
+
                 original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
-                loss = loss_function(bellman_updated_q_vals, original_q_vals_for_actions)
-                loss_function_returns.append(loss)
+                
+
+                # loss = loss_function(bellman_updated_q_vals, original_q_vals_for_actions)
+                # loss_function_returns.append(loss)
+                
+            # TODO:Testing gradient accumulation
+            # gradients = []
+            loss = 0.0
+            for j in range(len(random_indices)):
+                individual_loss = loss_function([float(bellman_updated_q_vals[j])], [float(original_q_vals_for_actions[j])])
+                loss += individual_loss
+                print(individual_loss)
+                grads = tape.gradient(individual_loss, model.trainable_variables)
+                print(grads)
+                delta = importance_sampling_weight[random_indices[j]] * td_error[j] * grads
+                if len(gradients) == 0:
+                    gradients = delta
+                else:
+                    gradients += delta
             
             gradients = tape.gradient(loss, model.trainable_variables)
+            print("num gradients:", gradients)
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))
         # if ready to update model (% UPDATE_MODEL_AFTER_N_FRAMES == 0)
         # take sample from replay buffers & update q-values
