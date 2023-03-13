@@ -501,7 +501,7 @@ def training_loop(agent_host):
         else:
             priority = max(past_priorities)
 
-        add_entry_to_replay(next_state, action, episode_reward, priority)
+        add_entry_to_replay(next_state, action, reward, priority)
         
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
             # Choose past actions from a distribution proportional to their priority.
