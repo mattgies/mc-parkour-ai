@@ -16,7 +16,7 @@ import sys
 import time
 
 import xmlgen
-import parkourcourse2 as course
+import parkourcourse1 as course
 import observationgrid1 as obsgrid
 from worldClasses import *
 import matplotlib.pyplot as plt
@@ -34,7 +34,7 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 5
+NUM_EPISODES = 200
 AVERAGE_REWARD_NEEDED_TO_END = 500
 BATCH_SIZE = 40
 
@@ -505,8 +505,8 @@ def training_loop(agent_host):
         add_entry_to_replay(cur_state, next_state, action, reward, priority)
 
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
-            normalized_probs = np.divide(past_priorities, np.mean(past_priorities))
-            sampled_transitions = np.random.choice(range(len(past_states)), size=BATCH_SIZE, replace=False)
+            normalized_probs = np.divide(past_priorities, np.sum(past_priorities))
+            sampled_transitions = np.random.choice(range(len(past_states)), size=BATCH_SIZE, replace=False, p=normalized_probs)
 
             sampled_states = np.array([past_states[i] for i in sampled_transitions])
             sampled_next_states = np.array([past_next_states[i] for i in sampled_transitions])
@@ -532,12 +532,11 @@ def training_loop(agent_host):
                     original_q_vals = model(sampled_states)
                     original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
                     expected, actual = [bellman_updated_q_vals[j]], [original_q_vals_for_actions[j]]
-                    # TODO custom loss function or optimizer so that we can use isw and td_error in the equations
                     loss = loss_function(expected, actual)
                     loss_function_returns.append(loss)
-                    #  isw * td_error *
 
                 grads = tape.gradient(loss, model.trainable_variables)
+                grads = [isw * td_error * grad for grad in grads]
                 optimizer.apply_gradients(zip(grads, model.trainable_variables))
         
         """
