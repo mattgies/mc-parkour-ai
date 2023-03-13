@@ -34,18 +34,18 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 500
+NUM_EPISODES = 5
 AVERAGE_REWARD_NEEDED_TO_END = 500
 BATCH_SIZE = 40
 
 GROUNDED_DISTANCE_THRESHOLD = 0.1 # The highest distance above a block for which the agent is considered to be stepping on it.
 
 # training parameters
-EPSILON = 0.1
-GAMMA = 1.0
-ALPHA = 0.5 # = [0,1], How much prioritization is used, with 0 being no prioritization
-BETA = 0 # = [0,1], Annealing factor (I don't know what this is)
-optimizer = keras.optimizers.Adam(learning_rate=0.00025, clipnorm=1.0)
+EPSILON = 0.5
+GAMMA = 0.99
+ALPHA = 0.7 # = [0,1], How much prioritization is used, with 0 being no prioritization
+BETA = 0.5 # = [0,1], Annealing factor (I don't know what this is)
+optimizer = keras.optimizers.Adam(learning_rate=0.0025, clipnorm=1.0)
 loss_function = keras.losses.MeanSquaredError()
 
 
@@ -75,6 +75,7 @@ rewardsMap: dict() = {
 
 # replay values
 past_states = []
+past_next_states = []
 past_actions = []
 past_rewards = []
 past_priorities = []
@@ -405,7 +406,7 @@ def update_target_model():
     target_model.set_weights(model.get_weights())
 
 
-def add_entry_to_replay(state, action, reward, priority):
+def add_entry_to_replay(state, next_state, action, reward, priority):
     """
     Called every time the AI takes an action
     Updates the replay buffers in place
@@ -413,6 +414,7 @@ def add_entry_to_replay(state, action, reward, priority):
     returns: void
     """
     past_states.append(state)
+    past_next_states.append(next_state)
     past_actions.append(action)
     past_rewards.append(reward)
     past_priorities.append(priority)
@@ -421,6 +423,7 @@ def add_entry_to_replay(state, action, reward, priority):
 
 def reset_replay():
     past_states = []
+    past_next_states = []
     past_actions = []
     past_rewards = []
 
@@ -430,6 +433,7 @@ def remove_first_entry_in_replay():
     This function will be called when our replay buffers are longer than MAX_HISTORY_LENGTH
     """
     del past_states[0]
+    del past_next_states[0]
     del past_actions[0]
     del past_rewards[0]
     del past_priorities[0]
@@ -438,26 +442,22 @@ def remove_first_entry_in_replay():
 
 
 def training_loop(agent_host):
-    reset_replay()
-
     global past_states
-    print(len(past_actions), len(past_rewards), len(past_states))
-    
     global blocks_walked_on 
     blocks_walked_on.clear()
     episode_reward = -rewardsMap["newBlockSteppedOn"] # zeroes out the reward that's given for just stepping on the first block (which is automatic, has nothing to do with the model's choices)
     episode_done = False
     frame_number = 0
-    cur_state_raw = agent_host.getWorldState()
     episode_start_time = time.time()
 
+    cur_state_raw = agent_host.getWorldState()
     while (len(cur_state_raw.observations) == 0) or (not obs_is_valid(cur_state_raw)):
         cur_state_raw = agent_host.getWorldState()
     cur_state = format_state(cur_state_raw)
 
     for _ in range(MAX_ACTIONS_PER_EPISODE):
-        if len(past_states) > 0:
-            cur_state = past_states[-1]
+        if len(past_next_states) > 0:
+            cur_state = past_next_states[-1]
         action = choose_action(model, cur_state)
         take_action(action, agent_host)
 
@@ -479,8 +479,8 @@ def training_loop(agent_host):
                 break
         frame_number += 1
         
-        episode_time_taken = time.time() - episode_start_time
         if is_dead:
+            episode_time_taken = time.time() - episode_start_time
             next_state = cur_state
             reward, episode_done = rewardsMap["death"] / episode_time_taken, True
         elif not goal_reached:
@@ -491,6 +491,7 @@ def training_loop(agent_host):
             global prev_block_below_agent
             prev_block_below_agent = get_block_below_agent(json.loads(next_state_raw.observations[-1].text))
         else:
+            episode_time_taken = time.time() - episode_start_time
             next_state = cur_state
             reward, episode_done = rewardsMap["goalReached"] / episode_time_taken, True
         episode_reward += reward
@@ -501,8 +502,45 @@ def training_loop(agent_host):
         else:
             priority = max(past_priorities)
 
-        add_entry_to_replay(next_state, action, reward, priority)
+        add_entry_to_replay(cur_state, next_state, action, reward, priority)
+
+        if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
+            normalized_probs = np.divide(past_priorities, np.mean(past_priorities))
+            sampled_transitions = np.random.choice(range(len(past_states)), size=BATCH_SIZE, replace=False)
+
+            sampled_states = np.array([past_states[i] for i in sampled_transitions])
+            sampled_next_states = np.array([past_next_states[i] for i in sampled_transitions])
+            sampled_actions = np.array([past_actions[i] for i in sampled_transitions])
+            sampled_rewards = np.array([past_rewards[i] for i in sampled_transitions])
+            sampled_priorities = np.array([past_priorities[i] for i in sampled_transitions])
+
+            predicted_future_rewards = target_model.predict(sampled_next_states, verbose=0) # prints to stdout
+            bellman_updated_q_vals = sampled_rewards + GAMMA * tf.reduce_max(predicted_future_rewards, axis=1)
+            N = len(past_states)
+            for j in range(len(sampled_transitions)):
+                original_index = sampled_transitions[j]
+                max_isw = max(importance_sampling_weight)
+                p_j_alpha = sampled_priorities[j] ** ALPHA
+                p_alpha_sum = sum([p ** ALPHA for p in past_priorities])
+                isw = ((N * p_j_alpha / p_alpha_sum) ** (-BETA)) / max_isw # line 10
+                td_error = bellman_updated_q_vals[j] - past_rewards[original_index - 1] # line 11
+                past_priorities[original_index] = abs(td_error) # line 12
+
+                # line 13
+                action_mask = tf.one_hot(sampled_actions, NUM_ACTIONS)
+                with tf.GradientTape() as tape:
+                    original_q_vals = model(sampled_states)
+                    original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
+                    expected, actual = [bellman_updated_q_vals[j]], [original_q_vals_for_actions[j]]
+                    # TODO custom loss function or optimizer so that we can use isw and td_error in the equations
+                    loss = loss_function(expected, actual)
+                    loss_function_returns.append(loss)
+                    #  isw * td_error *
+
+                grads = tape.gradient(loss, model.trainable_variables)
+                optimizer.apply_gradients(zip(grads, model.trainable_variables))
         
+        """
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
             # Choose past actions from a distribution proportional to their priority.
             # TODO: I'm pretty sure this isn't the correct distribution as described on the bottom of 
@@ -561,6 +599,8 @@ def training_loop(agent_host):
             gradients = tape.gradient(loss, model.trainable_variables)
             print("num gradients:", gradients)
             optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+        """
+
         # if ready to update model (% UPDATE_MODEL_AFTER_N_FRAMES == 0)
         # take sample from replay buffers & update q-values
         # update value of episode_done
