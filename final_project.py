@@ -43,8 +43,8 @@ GROUNDED_DISTANCE_THRESHOLD = 0.1 # The highest distance above a block for which
 # training parameters
 EPSILON = 0.1
 GAMMA = 1.0
-optimizer = keras.optimizers.Adam(learning_rate=0.00025, clipnorm=1.0)
-loss_function = keras.losses.MeanSquaredError()
+optimizer = keras.optimizers.Adam(learning_rate=0.025, clipnorm=1.0)
+loss_function = keras.losses.Huber()
 
 
 # states (state space is nearly infinite; not directly defined in our code)
@@ -66,7 +66,7 @@ NUM_ACTIONS: int = len(actionNames)
 rewardsMap: dict() = {
     "steppedOnPreviouslySeenBlock": -5, # -0.2,
     "newBlockSteppedOn": 1000,
-    "death": -50.0,
+    "death": -500.0,
     "goalReached": 50000
 }
 
@@ -283,6 +283,12 @@ def choose_action(model, state):
         return np.random.choice(NUM_ACTIONS)
     else:
         action_probs = model(tf.expand_dims(tf.convert_to_tensor(state), 0), training=False)
+        # print("past rewards", past_rewards)
+        # print("new probs")
+        # for k in range(len(actionNames)):
+        #     print(actionNames[k], float(action_probs[0][k]))
+
+        # print("\n\n\n\n")
         action = tf.argmax(action_probs[0]).numpy()
         return action
 
@@ -484,7 +490,7 @@ def training_loop(agent_host):
             reward, episode_done = rewardsMap["goalReached"] / episode_time_taken, True
         episode_reward += reward
 
-        add_entry_to_replay(next_state, action, episode_reward)
+        add_entry_to_replay(next_state, action, reward)
         
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
             random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
@@ -500,6 +506,7 @@ def training_loop(agent_host):
             with tf.GradientTape() as tape:
                 original_q_vals = model(sampled_states)
                 original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
+                # print(bellman_updated_q_vals, original_q_vals_for_actions)
                 loss = loss_function(bellman_updated_q_vals, original_q_vals_for_actions)
                 loss_function_returns.append(loss)
             
