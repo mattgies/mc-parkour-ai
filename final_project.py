@@ -55,11 +55,13 @@ actionNamesToActionsMap: dict() = {
     "stopMove": "move 0.0",
     "moveHalf": "move 0.5",
     "moveFull": "move 1.0",
+    "moveBackwards": "move -0.5",
     "jumpFull": "jump 1",
     "stopJump": "jump 0",
     "turnRight": "turn 1.0",
     "turnLeft": "turn -1.0",
-    "stopTurn": "turn 0.0"
+    "stopTurn": "turn 0.0",
+    "doNothing": ""
 }
 actionNames: list() = list(actionNamesToActionsMap.keys())
 NUM_ACTIONS: int = len(actionNames)
