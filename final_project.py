@@ -30,7 +30,7 @@ episode_reward_running_avgs = []
 
 
 # CONSTANTS
-MAX_HISTORY_LENGTH = 50000
+MAX_HISTORY_LENGTH = 500000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 100
@@ -288,6 +288,11 @@ def choose_action(model, state):
         return np.random.choice(NUM_ACTIONS)
     else:
         action_probs = model(tf.expand_dims(tf.convert_to_tensor(state), 0), training=False)
+        print("new probs")
+        for k in range(len(actionNames)):
+            print(actionNames[k], float(action_probs[0][k]))
+
+        print("\n\n\n\n")
         action = tf.argmax(action_probs[0]).numpy()
         return action
 
