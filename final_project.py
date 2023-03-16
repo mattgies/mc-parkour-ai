@@ -29,7 +29,7 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 20
+NUM_EPISODES = 1000
 AVERAGE_REWARD_NEEDED_TO_END = 500
 BATCH_SIZE = 10
 
@@ -240,8 +240,9 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
                 closest_block_distance = direction.magnitude()
     # NOTE proved that direction_to_closest_unwalked_block is only ever (0,0,0) when blocks is empty
     # ergo, there's an issue with get_nearby_walkable_blocks
-    if direction_to_closest_unwalked_block.x == 0:
-        print(blocks)
+    # TODO check why this is 0 when you land on a new block
+    # if direction_to_closest_unwalked_block.x == 0:
+    #     print(blocks)
 
     # Velocity vector
     velocity = agent_position - prev_agent_position
@@ -434,8 +435,6 @@ def remove_first_entry_in_replay():
 
 
 def training_loop(agent_host):
-    time.sleep(0.2)
-    
     global blocks_walked_on 
     blocks_walked_on.clear()
     episode_reward = -rewardsMap["newBlockSteppedOn"] # zeroes out the reward that's given for just stepping on the first block (which is automatic, has nothing to do with the model's choices)
