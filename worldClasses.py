@@ -12,7 +12,10 @@ class Block:
         self.name = name
 
     def __str__(self):
-        return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + "|" + self.name + ")"
+        return "(" + str(self.x) + "," + str(self.y) + "," + str(self.z) + "|" + self.name + ")"\
+    
+    def __repr__(self):
+        return str(self)
 
     def __eq__(self, other):
         return self.x == other.x and self.y == other.y and self.z == other.z

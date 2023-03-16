@@ -1,8 +1,3 @@
-from __future__ import print_function
-from future import standard_library
-standard_library.install_aliases()
-from builtins import range
-from builtins import object
 import numpy as np
 import math
 import MalmoPython
@@ -10,8 +5,6 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import json
-import copy
-import os
 import sys
 import time
 
@@ -20,6 +13,8 @@ import parkourcourse2 as course
 import observationgrid1 as obsgrid
 from worldClasses import *
 import matplotlib.pyplot as plt
+
+from fp_plotting import Plotter
 
 
 # METRICS
@@ -34,16 +29,16 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 200
+NUM_EPISODES = 20
 AVERAGE_REWARD_NEEDED_TO_END = 500
 BATCH_SIZE = 10
 
 GROUNDED_DISTANCE_THRESHOLD = 0.1 # The highest distance above a block for which the agent is considered to be stepping on it.
 
 # training parameters
-EPSILON = 0.25
+EPSILON = 0.4
 GAMMA = 0.99
-optimizer = keras.optimizers.Adam(learning_rate=0.5, clipnorm=1.0)
+optimizer = keras.optimizers.Adam(learning_rate=0.0025)
 # loss_function = keras.losses.Huber()
 def loss_function(arr1, arr2):
     # print("array lengths:", len(arr1), len(arr2))
@@ -55,6 +50,7 @@ def loss_function(arr1, arr2):
         sum += (arr1[i] - arr2[i])
         i += 1
     return sum
+loss_function = keras.losses.Huber()
 
 
 # states (state space is nearly infinite; not directly defined in our code)
@@ -76,7 +72,7 @@ NUM_ACTIONS: int = len(actionNames)
 
 # rewards
 rewardsMap: dict() = {
-    "steppedOnPreviouslySeenBlock": -5, # -0.2,
+    "steppedOnPreviouslySeenBlock": -5, # 0s, # -0.2,
     "newBlockSteppedOn": 1000,
     "death": -500.0,
     "goalReached": 50000
@@ -142,17 +138,27 @@ def get_nearby_walkable_blocks(observations):
 
     returns: list of Block
     """
-    grid = observations.get(u'floor5x5x2')  
+    grid = observations.get(u'floor5x5x5')
+    
+    # NOTE showed that "grid" starts off as an array of just "air" for the first few frames, then updates with actual info
+    # this is probably due to the map needing to load in from the XML, but the agent is alive before the map is fully loaded
+    # print("\n", len(grid))
+    # print(grid)
     player_location = [int(observations[u'XPos']), int(observations[u'YPos']), int(observations[u'ZPos'])]
     result = []
     # TODO: Make these variables
     i = 0
-    for y in range(-1, 0 + 1):
+    for y in range(-2, 2 + 1):
         for z in range(-2, 2 + 1):
             for x in range(-2, 2 + 1):
+                # NOTE showed that (0,-1,0) within the grid is the location of the block beneath the player
+                # if (x == 0 and y == -1 and z == 0):
+                #     print(grid[i])
                 if grid[i] != "air" and grid[i] != "lava":
                     result.append(Block(player_location[0]+x, player_location[1]+y, player_location[2]+z, grid[i]))
                 i += 1
+    # if len(result) == 0:
+    #     print("ERROR LINE 161", grid)
     return result
 
 
@@ -165,7 +171,17 @@ def get_block_below_agent(observations):
     """
     block_name = observations.get(u'block_below_agent')[0]
     player_location = [int(observations[u'XPos']), int(observations[u'YPos']), int(observations[u'ZPos'])]
-    return Block(player_location[0], player_location[1]-1, player_location[2], block_name)
+    
+    grid = observations.get(u'floor5x5x5')
+    i = 0
+    for y in range(-2, 2 + 1):
+        for z in range(-2, 2 + 1):
+            for x in range(-2, 2 + 1):
+                # NOTE showed that (0,-1,0) within the grid is the location of the block beneath the player
+                if (x == 0 and y == -1 and z == 0):
+                    return Block(player_location[0], player_location[1]-1, player_location[2], grid[i])
+                i += 1
+
 
 
 def is_grounded(observations):
@@ -204,15 +220,6 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
     #     raise ValueError("Unable to get new agent state.")
 
     obs = json.loads(obs_text) # most recent observation
-    # Can check if observation doesn't contain necessary data.
-    # if not u'XPos' in obs or not u'YPos' in obs or not u'ZPos' in obs:
-    #     print("Does not exist")
-    #     # TODO: Make something appropriate for when we are unable to get the agent position.
-    #     return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, False)  
-    # else:
-    #     current_s = "%d:%d" % (int(obs[u'XPos']), int(obs[u'ZPos']))
-    #     print("Position: %s (x = %.2f, y = %.2f, z = %.2f)" % (current_s, float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos'])))
-    #     print("Direction vector: (x = %.2f, y = %.2f, z = %.2f" % (float(obs[u'entities'][0][u'motionX']), float(obs[u'entities'][0][u'motionY']), float(obs[u'entities'][0][u'motionZ'])))
 
     # Where agent is this update.
     agent_position = Vector(float(obs[u'XPos']), float(obs[u'YPos']), float(obs[u'ZPos']))
@@ -231,6 +238,10 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
             if direction.magnitude() < closest_block_distance:
                 direction_to_closest_unwalked_block = direction
                 closest_block_distance = direction.magnitude()
+    # NOTE proved that direction_to_closest_unwalked_block is only ever (0,0,0) when blocks is empty
+    # ergo, there's an issue with get_nearby_walkable_blocks
+    if direction_to_closest_unwalked_block.x == 0:
+        print(blocks)
 
     # Velocity vector
     velocity = agent_position - prev_agent_position
@@ -270,16 +281,6 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
         yaw,
         grounded_this_update
     )
-    
-
-# Don't think this is necessary because training loop function just loops episode as well
-# def episode_loop():
-#     """
-#     Until the episode is done, repeat the same
-#     (state1, action1, result1, state2, action2, ...)
-#     steps in a loop
-#     """
-#     pass
 
 
 def choose_action(model, state):
@@ -289,8 +290,6 @@ def choose_action(model, state):
     
     if we want: update epsilon to decay toward its minimum
     """
-    # return np.random.choice([actionNames.index("moveFull"), actionNames.index("jumpFull")])
-    # return np.random.choice([actionNames.index("moveFull"), actionNames.index("jumpFull"), actionNames.index("turnLeft"), actionNames.index("stopTurn")])
     
     if np.random.rand(1)[0] < EPSILON:
         return np.random.choice(NUM_ACTIONS)
@@ -327,10 +326,9 @@ def calculate_reward(raw_state):
     """
     Called once per frame, after new state
     
-    returns: int, bool, integer reward and whether episode is done or not
+    returns: integer representing reward
     """
     reward = 0
-    episode_done = False
 
     global blocks_walked_on
     global prev_block_below_agent
@@ -345,18 +343,12 @@ def calculate_reward(raw_state):
     player_height = float(obs[u'YPos'])
 
     player_height_rounded = int(player_height)
-    block_name_below_player = grid[5 * int(5 / 2) + int(5 / 2)] # TODO: Make this use variables or something
-    if abs(player_height - player_height_rounded) <= 0.01:
-        if(block_name_below_player == "diamond_block"):
-            return rewardsMap["goalReached"], True
+    block_name_below_player = get_block_below_agent(obs).name
     
     agent_position_int = Vector(int(obs[u'XPos']), int(obs[u'YPos']), int(obs[u'ZPos']))
         
     grounded_this_update = is_grounded(obs)
 
-    full_life = 20.0
-    if obs.get(u"Life") < full_life:
-        return 0, False
 
     # TODO: Trying to see if we were grounded in between this update and the previous.
     prev_distance_above_block = prev_agent_position.y - int(prev_agent_position.y)
@@ -372,7 +364,7 @@ def calculate_reward(raw_state):
         grounded_between_updates = True
 
     if (not grounded_this_update and not grounded_between_updates):
-        return 0, False
+        return 0
 
     block_stepping_on = get_block_below_agent(obs)
     if (grounded_between_updates and prev_block_below_agent.name != "air" and prev_block_below_agent.name != "lava" 
@@ -387,16 +379,13 @@ def calculate_reward(raw_state):
         # See if we have stepped on it before.
         if block_stepping_on.name != "stone":
             reward += 0
-            episode_done = False
         elif block_stepping_on in blocks_walked_on:
             reward += rewardsMap["steppedOnPreviouslySeenBlock"]
-            episode_done = False
         else:
             # TODO: Testing print to see when Agent thinks it's on a new block
             print("\nStepped on a new block:", block_stepping_on.name, block_stepping_on.position())
             blocks_walked_on.add(block_stepping_on)
             reward += rewardsMap["newBlockSteppedOn"]
-            episode_done = False
 
     # for b in blocks:
     #     if agent_position_int == b.position() + Vector(0,1,0):
@@ -411,7 +400,7 @@ def calculate_reward(raw_state):
     #             print("\nStepped on a new block:", b.name, b.position())
     #             blocks_walked_on.add(b)
     #         break
-    return reward, episode_done
+    return reward
 
 
 def update_target_model():
@@ -433,13 +422,6 @@ def add_entry_to_replay(state, next_state, action, reward):
     past_rewards.append(reward)
 
 
-def reset_replay():
-    past_states = []
-    past_next_states = []
-    past_actions = []
-    past_rewards = []
-
-
 def remove_first_entry_in_replay():
     """
     This function will be called when our replay buffers are longer than MAX_HISTORY_LENGTH
@@ -452,7 +434,7 @@ def remove_first_entry_in_replay():
 
 
 def training_loop(agent_host):
-    reset_replay()
+    time.sleep(0.2)
     
     global blocks_walked_on 
     blocks_walked_on.clear()
@@ -461,6 +443,7 @@ def training_loop(agent_host):
     frame_number = 0
     cur_state_raw = agent_host.getWorldState()
     episode_start_time = time.time()
+    has_stepped_on_first_block = False
 
     while (len(cur_state_raw.observations) == 0) or (not obs_is_valid(cur_state_raw)):
         cur_state_raw = agent_host.getWorldState()
@@ -468,7 +451,7 @@ def training_loop(agent_host):
 
     for _ in range(MAX_ACTIONS_PER_EPISODE):
         if len(past_states) > 0:
-            cur_state = past_states[-1]
+            cur_state = past_next_states[-1]
         action = choose_action(model, cur_state)
         take_action(action, agent_host)
 
@@ -492,11 +475,11 @@ def training_loop(agent_host):
         
         episode_time_taken = time.time() - episode_start_time
         if is_dead:
-            next_state = cur_state
+            next_state = cur_state # TODO examine whether this is valid
             reward, episode_done = rewardsMap["death"] / episode_time_taken, True
         elif not goal_reached:
             next_state = format_state(next_state_raw)
-            reward, episode_done = calculate_reward(next_state_raw)
+            reward, episode_done = calculate_reward(next_state_raw), False
 
             # Remember previous block. Used in calculate_reward
             global prev_block_below_agent
@@ -506,6 +489,19 @@ def training_loop(agent_host):
             reward, episode_done = rewardsMap["goalReached"] / episode_time_taken, True
         episode_reward += reward
 
+
+        if reward == rewardsMap["newBlockSteppedOn"] and not has_stepped_on_first_block:
+            reward = 0
+            has_stepped_on_first_block = True
+        
+        # NOTE: proved that blocks_walked_on updates correctly (at least for a test of first block and jumping to the next block)
+        # print(blocks_walked_on)
+        # NOTE: proved there is an issue with the way distance_to_nearest_unwalked_block is calculated
+        # if next_state[0] == 0:
+        #     print("IS_DEAD:", is_dead, "GOAL_REACHED:", goal_reached)
+        #     print("CUR STATE:", cur_state)
+        #     print("NEXT STATE:", next_state)
+        #     print("\n\n")
         add_entry_to_replay(cur_state, next_state, action, reward)
         
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
@@ -614,36 +610,9 @@ for i in range(NUM_EPISODES):
     time.sleep(0.5)
 
     # decay epsilon (model should be more confident)
+    # TODO alter this to better suit the realistic learning time
     EPSILON -= (EPSILON / NUM_EPISODES)
-    print(EPSILON)
 
 
-
-
-
-
-plt.title("Loss function return value over time")
-plt.xlabel("# call to loss function")
-plt.ylabel("Loss function return value (log scale)")
-plt.semilogy(range(1, len(loss_function_returns) + 1), loss_function_returns, linewidth=2.0, c="red")
-plt.show()
-
-plt.title("Raw reward per episode over episode iterations")
-plt.xlabel("Episode #")
-plt.ylabel("Cumulative reward")
-plt.plot(range(1, NUM_EPISODES+1), episode_rewards, linewidth=2.0, c="green")
-plt.show()
-
-
-plt.title("Average reward over episode iterations")
-plt.xlabel("Episode #")
-plt.ylabel("Average reward of current episode and past episodes")
-plt.plot(range(1, NUM_EPISODES+1), episode_reward_running_avgs, linewidth=2.0, c="blue")
-plt.show()
-
-
-with open("./training_results.py", 'w') as f:
-    f.write(str(episode_rewards) + "\n")
-    f.write(str(episode_reward_running_avgs) + "\n")
-
-tf.keras.utils.plot_model(target_model, to_file="model.png", show_shapes=True, rankdir="LR", dpi=300)
+plotter = Plotter(NUM_EPISODES, loss_function_returns, episode_rewards, episode_reward_running_avgs)
+plotter.plot()
