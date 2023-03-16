@@ -36,15 +36,25 @@ UPDATE_MODEL_AFTER_N_FRAMES = 5
 UPDATE_TARGET_AFTER_N_FRAMES = 100
 NUM_EPISODES = 200
 AVERAGE_REWARD_NEEDED_TO_END = 500
-BATCH_SIZE = 40
+BATCH_SIZE = 10
 
 GROUNDED_DISTANCE_THRESHOLD = 0.1 # The highest distance above a block for which the agent is considered to be stepping on it.
 
 # training parameters
-EPSILON = 0.1
-GAMMA = 1.0
-optimizer = keras.optimizers.Adam(learning_rate=0.025, clipnorm=1.0)
-loss_function = keras.losses.Huber()
+EPSILON = 0.25
+GAMMA = 0.99
+optimizer = keras.optimizers.Adam(learning_rate=0.5, clipnorm=1.0)
+# loss_function = keras.losses.Huber()
+def loss_function(arr1, arr2):
+    # print("array lengths:", len(arr1), len(arr2))
+    # Q: over time, loss always increases to a massive magnitude (both pos and neg values) but array lengths are always BATCH_SIZE (which is correct)
+    # so why is loss getting so big?
+    sum = 0
+    i = 0
+    while i < len(arr1) and i < len(arr2):
+        sum += (arr1[i] - arr2[i])
+        i += 1
+    return sum
 
 
 # states (state space is nearly infinite; not directly defined in our code)
@@ -53,11 +63,13 @@ actionNamesToActionsMap: dict() = {
     "stopMove": "move 0.0",
     "moveHalf": "move 0.5",
     "moveFull": "move 1.0",
+    "moveBackwards": "move -0.5",
     "jumpFull": "jump 1",
     "stopJump": "jump 0",
     "turnRight": "turn 1.0",
     "turnLeft": "turn -1.0",
-    "stopTurn": "turn 0.0"
+    "stopTurn": "turn 0.0",
+    "keepSameActions": ""
 }
 actionNames: list() = list(actionNamesToActionsMap.keys())
 NUM_ACTIONS: int = len(actionNames)
@@ -73,6 +85,7 @@ rewardsMap: dict() = {
 
 # replay values
 past_states = []
+past_next_states = []
 past_actions = []
 past_rewards = []
 episode_reward = 0
@@ -407,7 +420,7 @@ def update_target_model():
     target_model.set_weights(model.get_weights())
 
 
-def add_entry_to_replay(state, action, reward):
+def add_entry_to_replay(state, next_state, action, reward):
     """
     Called every time the AI takes an action
     Updates the replay buffers in place
@@ -415,12 +428,14 @@ def add_entry_to_replay(state, action, reward):
     returns: void
     """
     past_states.append(state)
+    past_next_states.append(next_state)
     past_actions.append(action)
     past_rewards.append(reward)
 
 
 def reset_replay():
     past_states = []
+    past_next_states = []
     past_actions = []
     past_rewards = []
 
@@ -430,6 +445,7 @@ def remove_first_entry_in_replay():
     This function will be called when our replay buffers are longer than MAX_HISTORY_LENGTH
     """
     del past_states[0]
+    del past_next_states[0]
     del past_actions[0]
     del past_rewards[0]
     # maybe print something
@@ -490,16 +506,17 @@ def training_loop(agent_host):
             reward, episode_done = rewardsMap["goalReached"] / episode_time_taken, True
         episode_reward += reward
 
-        add_entry_to_replay(next_state, action, reward)
+        add_entry_to_replay(cur_state, next_state, action, reward)
         
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
             random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
             sampled_states = np.array([past_states[i] for i in random_indices])
+            sampled_next_states = np.array([past_next_states[i] for i in random_indices])
             sampled_actions = np.array([past_actions[i] for i in random_indices])
             sampled_rewards = np.array([past_rewards[i] for i in random_indices])
             
             # next_state = tf.convert_to_tensor(next_state)
-            predicted_future_rewards = target_model.predict(sampled_states, verbose=0) # prints to stdout
+            predicted_future_rewards = target_model.predict(sampled_next_states, verbose=0) # prints to stdout
             bellman_updated_q_vals = sampled_rewards + GAMMA * tf.reduce_max(predicted_future_rewards, axis=1)
             action_mask = tf.one_hot(sampled_actions, NUM_ACTIONS)
 
@@ -508,6 +525,7 @@ def training_loop(agent_host):
                 original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
                 # print(bellman_updated_q_vals, original_q_vals_for_actions)
                 loss = loss_function(bellman_updated_q_vals, original_q_vals_for_actions)
+                # print("Loss:", loss)
                 loss_function_returns.append(loss)
             
             gradients = tape.gradient(loss, model.trainable_variables)
@@ -515,9 +533,9 @@ def training_loop(agent_host):
         # if ready to update model (% UPDATE_MODEL_AFTER_N_FRAMES == 0)
         # take sample from replay buffers & update q-values
         # update value of episode_done
-        if frame_number % UPDATE_TARGET_AFTER_N_FRAMES == 0:
-            # if ready to update target model
-            update_target_model()
+        # if frame_number % UPDATE_TARGET_AFTER_N_FRAMES == 0:
+        #     # if ready to update target model
+        #     update_target_model()
 
 
         if len(past_states) > MAX_HISTORY_LENGTH:
@@ -532,6 +550,7 @@ def training_loop(agent_host):
             episode_rewards.append(episode_reward)
             episode_reward_running_avgs.append(reward_of_all_episodes / (i+1))
 
+            update_target_model()
             if goal_reached:
                 episodes_that_succeeded.append(i)
             print("Episode reward:", episode_reward, "Average reward:", (reward_of_all_episodes / (i+1)), "Successful episodes:", episodes_that_succeeded)
