@@ -27,11 +27,11 @@ episode_reward_running_avgs = []
 # CONSTANTS
 MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
-UPDATE_MODEL_AFTER_N_FRAMES = 5
+UPDATE_MODEL_AFTER_N_FRAMES = 4
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 1000
+NUM_EPISODES = 100
 AVERAGE_REWARD_NEEDED_TO_END = 500
-BATCH_SIZE = 10
+BATCH_SIZE = 32
 
 GROUNDED_DISTANCE_THRESHOLD = 0.1 # The highest distance above a block for which the agent is considered to be stepping on it.
 
@@ -74,7 +74,7 @@ NUM_ACTIONS: int = len(actionNames)
 rewardsMap: dict() = {
     "steppedOnPreviouslySeenBlock": -5, # 0s, # -0.2,
     "newBlockSteppedOn": 1000,
-    "death": -500.0,
+    "death": -500,
     "goalReached": 50000
 }
 
@@ -437,7 +437,7 @@ def remove_first_entry_in_replay():
 def training_loop(agent_host):
     global blocks_walked_on 
     blocks_walked_on.clear()
-    episode_reward = -rewardsMap["newBlockSteppedOn"] # zeroes out the reward that's given for just stepping on the first block (which is automatic, has nothing to do with the model's choices)
+    episode_reward = 0
     episode_done = False
     frame_number = 0
     cur_state_raw = agent_host.getWorldState()
@@ -486,12 +486,12 @@ def training_loop(agent_host):
         else:
             next_state = cur_state
             reward, episode_done = rewardsMap["goalReached"] / episode_time_taken, True
-        episode_reward += reward
 
-
+        # zeroes out the reward that's given for just stepping on the first block (which is automatic, has nothing to do with the model's choices)
         if reward == rewardsMap["newBlockSteppedOn"] and not has_stepped_on_first_block:
             reward = 0
             has_stepped_on_first_block = True
+        episode_reward += reward
         
         # NOTE: proved that blocks_walked_on updates correctly (at least for a test of first block and jumping to the next block)
         # print(blocks_walked_on)
