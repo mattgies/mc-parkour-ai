@@ -30,18 +30,19 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 4
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 500
+NUM_EPISODES = 200
 AVERAGE_REWARD_NEEDED_TO_END = 500
 BATCH_SIZE = 25
 
 GROUNDED_DISTANCE_THRESHOLD = 0.2 # The highest distance above a block for which the agent is considered to be stepping on it.
 
 # training parameters
-EPSILON = 0.3
+EPSILON_START = EPSILON = 0.6
+EPSILON_MIN = 0.1
 GAMMA = 0.99
 ALPHA = 0.7 # = [0,1], How much prioritization is used, with 0 being no prioritization
 BETA = 0.5 # = [0,1], Annealing factor (I don't know what this is)
-optimizer = keras.optimizers.Adam(learning_rate=0.00025)
+optimizer = keras.optimizers.Adam(learning_rate=0.0025)
 # loss_function = keras.losses.Huber()
 def loss_function(arr1, arr2):
     # print("array lengths:", len(arr1), len(arr2))
@@ -783,7 +784,7 @@ for i in range(NUM_EPISODES):
 
     # decay epsilon (model should be more confident)
     # TODO alter this to better suit the realistic learning time
-    EPSILON -= (EPSILON / NUM_EPISODES)
+    EPSILON -= ((EPSILON_START - EPSILON_MIN) / NUM_EPISODES)
 
 
 plotter = Plotter(NUM_EPISODES, loss_function_returns, episode_rewards, episode_reward_running_avgs)
