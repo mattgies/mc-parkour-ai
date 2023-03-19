@@ -37,7 +37,7 @@ BATCH_SIZE = 25
 GROUNDED_DISTANCE_THRESHOLD = 0.2 # The highest distance above a block for which the agent is considered to be stepping on it.
 
 # training parameters
-EPSILON = 0.4
+EPSILON = 0.3
 GAMMA = 0.99
 ALPHA = 0.7 # = [0,1], How much prioritization is used, with 0 being no prioritization
 BETA = 0.5 # = [0,1], Annealing factor (I don't know what this is)
@@ -528,14 +528,14 @@ def training_loop(agent_host):
         elif not goal_reached:
             next_state = format_state(next_state_raw)
             # reward = 0 if len(next_state_raw.rewards) == 0 else next_state_raw.rewards[-1].getValue()
-            reward = calculate_reward(next_state_raw)
+            reward = calculate_reward(next_state_raw) / episode_time_taken
             episode_done = False
             # Remember previous block. Used in calculate_reward
             global prev_block_below_agent
             prev_block_below_agent = get_block_below_agent(json.loads(next_state_raw.observations[-1].text))
         else:
             # reward = 0 if len(next_state_raw.rewards) == 0 else next_state_raw.rewards[-1].getValue()
-            reward = rewardsMap["goalReached"]
+            reward = rewardsMap["goalReached"] / episode_time_taken
             episode_done = True
 
         if reward != 0 and not has_stepped_on_first_block:
