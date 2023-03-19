@@ -7,9 +7,10 @@ from tensorflow.keras import layers
 import json
 import sys
 import time
+import random
 
 import xmlgen
-import parkourcourse2 as course
+import parkourcourse1 as course
 import observationgrid1 as obsgrid
 from worldClasses import *
 import matplotlib.pyplot as plt
@@ -29,16 +30,18 @@ MAX_HISTORY_LENGTH = 50000
 MAX_ACTIONS_PER_EPISODE = 10000
 UPDATE_MODEL_AFTER_N_FRAMES = 4
 UPDATE_TARGET_AFTER_N_FRAMES = 100
-NUM_EPISODES = 100
+NUM_EPISODES = 500
 AVERAGE_REWARD_NEEDED_TO_END = 500
-BATCH_SIZE = 32
+BATCH_SIZE = 25
 
-GROUNDED_DISTANCE_THRESHOLD = 0.1 # The highest distance above a block for which the agent is considered to be stepping on it.
+GROUNDED_DISTANCE_THRESHOLD = 0.2 # The highest distance above a block for which the agent is considered to be stepping on it.
 
 # training parameters
 EPSILON = 0.4
 GAMMA = 0.99
-optimizer = keras.optimizers.Adam(learning_rate=0.0025)
+ALPHA = 0.7 # = [0,1], How much prioritization is used, with 0 being no prioritization
+BETA = 0.5 # = [0,1], Annealing factor (I don't know what this is)
+optimizer = keras.optimizers.Adam(learning_rate=0.00025)
 # loss_function = keras.losses.Huber()
 def loss_function(arr1, arr2):
     # print("array lengths:", len(arr1), len(arr2))
@@ -72,18 +75,31 @@ NUM_ACTIONS: int = len(actionNames)
 
 # rewards
 rewardsMap: dict() = {
-    "steppedOnPreviouslySeenBlock": -5, # 0s, # -0.2,
-    "newBlockSteppedOn": 1000,
-    "death": -500,
-    "goalReached": 50000
+    "steppedOnPreviouslySeenBlock": 0, # -0.0001, # 0s, # -0.2,
+    "newBlockSteppedOn": 10,
+    "death": 0, # -1,
+    "goalReached": 1000
 }
 
 
 # replay values
+# past_states = []
+# past_next_states = []
+# past_actions = []
+# past_rewards = []
+# past_done = []
+# replay_memory = []
+
+
+
 past_states = []
 past_next_states = []
 past_actions = []
 past_rewards = []
+past_done = []
+past_priorities = []
+past_isw = []
+
 episode_reward = 0
 frame_number = 0
 episode_number = 0
@@ -93,7 +109,7 @@ episode_number = 0
 
 # models
 def create_model():
-    input_shape = (10,) # 3 for closest block, 3 for velocity vector, 2 for two boolean inputs
+    input_shape = (11,) # 3 for closest block, 3 for velocity vector, 2 for two boolean inputs
 
     inputs = layers.Input(shape=input_shape)
 
@@ -103,7 +119,10 @@ def create_model():
 
     action = layers.Dense(NUM_ACTIONS, activation='linear')(layer3)
 
-    return keras.Model(inputs=inputs, outputs=action)
+    # return keras.Model(inputs=inputs, outputs=action)
+    model = keras.Model(inputs=inputs, outputs=action)
+    model.compile(loss="mse", optimizer=keras.optimizers.Adam(learning_rate=0.0025))
+    return model
 
 model = create_model()
 target_model = create_model()
@@ -116,6 +135,7 @@ target_model = create_model()
 
 # global agent variables
 prev_agent_position = Vector(0.5, 227.0, 0.5) # Where the player was last update
+prev_agent_yaw = 0
 prev_block_below_agent = Block(0,0,0,"air") # What block was below the player last update
 blocks_walked_on = set()
 ## Used for testing prints
@@ -169,7 +189,6 @@ def get_block_below_agent(observations):
 
     returns: Block
     """
-    block_name = observations.get(u'block_below_agent')[0]
     player_location = [int(observations[u'XPos']), int(observations[u'YPos']), int(observations[u'ZPos'])]
     
     grid = observations.get(u'floor5x5x5')
@@ -188,7 +207,7 @@ def is_grounded(observations):
     """
     returns: bool: true if touching ground
     """
-    grid = observations.get(u'floor5x5x2')  
+    grid = observations.get(u'floor5x5x5')  
     player_height = float(observations[u'YPos'])
     player_height_rounded = int(player_height)
     block_name_below_player = get_block_below_agent(observations).name # grid[5 * int(5 / 2) + int(5 / 2)] 
@@ -250,6 +269,9 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
 
     # Facing direction. Doesn't need to look up or down
     yaw = obs[u'Yaw']
+    global prev_agent_yaw
+    yawChange = yaw - prev_agent_yaw
+    prev_agent_yaw = yaw
 
     # distance from edge of block
     # Y axis is up, so only care about X and Z
@@ -280,6 +302,7 @@ def format_state(raw_state) -> "tuple(float, float, float, float, float, float, 
         velocity.y,
         velocity.z,
         yaw,
+        yawChange,
         grounded_this_update
     )
 
@@ -309,7 +332,11 @@ def choose_action(model, state):
 def obs_is_valid(raw_state):
     obs_text = raw_state.observations[-1].text
     obs = json.loads(obs_text)
-    if not u'XPos' in obs or not u'YPos' in obs or not u'ZPos' in obs:
+    if not u'XPos' in obs \
+        or not u'YPos' in obs \
+        or not u'ZPos' in obs \
+        or not u'Yaw' in obs \
+        or not u'floor5x5x5' in obs:
         return False
     return True
 
@@ -340,7 +367,7 @@ def calculate_reward(raw_state):
 
     # need to update, but very rudimentary reward checking system
     # check for game finished
-    grid = obs.get(u'floor5x5x2')  
+    grid = obs.get(u'floor5x5x5')  
     player_height = float(obs[u'YPos'])
 
     player_height_rounded = int(player_height)
@@ -374,19 +401,19 @@ def calculate_reward(raw_state):
         # so use the stored value when adding which blocks we've stepped on.
         print("Stepped on a new block:", prev_block_below_agent.name, prev_block_below_agent.position(), "last update")
         blocks_walked_on.add(prev_block_below_agent)
-        reward += rewardsMap["newBlockSteppedOn"]
+        return rewardsMap["newBlockSteppedOn"]
     if block_stepping_on.name != "air" and block_stepping_on.name != "lava":
         # We have found the block we're stepping on, if any.
         # See if we have stepped on it before.
         if block_stepping_on.name != "stone":
-            reward += 0
+            return 0
         elif block_stepping_on in blocks_walked_on:
-            reward += rewardsMap["steppedOnPreviouslySeenBlock"]
+            return rewardsMap["steppedOnPreviouslySeenBlock"]
         else:
             # TODO: Testing print to see when Agent thinks it's on a new block
-            print("\nStepped on a new block:", block_stepping_on.name, block_stepping_on.position())
+            print("Stepped on a new block:", block_stepping_on.name, block_stepping_on.position())
             blocks_walked_on.add(block_stepping_on)
-            reward += rewardsMap["newBlockSteppedOn"]
+            return rewardsMap["newBlockSteppedOn"]
 
     # for b in blocks:
     #     if agent_position_int == b.position() + Vector(0,1,0):
@@ -401,7 +428,7 @@ def calculate_reward(raw_state):
     #             print("\nStepped on a new block:", b.name, b.position())
     #             blocks_walked_on.add(b)
     #         break
-    return reward
+    return 0
 
 
 def update_target_model():
@@ -410,28 +437,35 @@ def update_target_model():
     target_model.set_weights(model.get_weights())
 
 
-def add_entry_to_replay(state, next_state, action, reward):
+def add_entry_to_replay(state, next_state, action, reward, done, priority):
     """
     Called every time the AI takes an action
     Updates the replay buffers in place
 
     returns: void
     """
+    # replay_memory.append((state, next_state, action, reward, done, priority, 1.0))
     past_states.append(state)
     past_next_states.append(next_state)
     past_actions.append(action)
     past_rewards.append(reward)
+    past_done.append(done)
+    past_priorities.append(priority)
+    past_isw.append(1.0)
 
 
 def remove_first_entry_in_replay():
     """
     This function will be called when our replay buffers are longer than MAX_HISTORY_LENGTH
     """
+    # del replay_memory[0]
     del past_states[0]
     del past_next_states[0]
     del past_actions[0]
     del past_rewards[0]
-    # maybe print something
+    del past_done[0]
+    del past_priorities[0]
+    del past_isw[0]
 
 
 def training_loop(agent_host):
@@ -443,15 +477,26 @@ def training_loop(agent_host):
     cur_state_raw = agent_host.getWorldState()
     episode_start_time = time.time()
     has_stepped_on_first_block = False
+    model.set_weights(target_model.get_weights())
 
     while (len(cur_state_raw.observations) == 0) or (not obs_is_valid(cur_state_raw)):
         cur_state_raw = agent_host.getWorldState()
     cur_state = format_state(cur_state_raw)
 
     for _ in range(MAX_ACTIONS_PER_EPISODE):
+        # if len(past_states) > 0:
+        #     cur_state = past_next_states[-1]
         if len(past_states) > 0:
-            cur_state = past_next_states[-1]
+            last_next_state = past_next_states[-1]
+            cur_state = last_next_state
         action = choose_action(model, cur_state)
+        # if action != actionNames.index("keepSameActions"):
+        #     agent_host.sendCommand("move 0")
+        #     agent_host.sendCommand("turn 0")
+        #     agent_host.sendCommand("jump 0")
+        # else:
+        #     print("keeping same actions")
+
         take_action(action, agent_host)
 
         # time.sleep(0.05)
@@ -462,37 +507,41 @@ def training_loop(agent_host):
         while (len(next_state_raw.observations) == 0) or (not obs_is_valid(next_state_raw)):
             next_state_raw = agent_host.getWorldState()
             if (not next_state_raw.is_mission_running):
-                # TODO: Hack to check if player has reached the goal or not. There are multiple ways to end the mission
-                if(next_state_raw.rewards and next_state_raw.rewards[-1].getValue() == rewardsMap["goalReached"]):
-                # if cur_state[7]: # ISSUE: if player is jumping onto the diamond block, the mission ends but the reward is not given. it's only given via this condition if the agent walks onto the goal block
-                    goal_reached = True
-                else:
-                    # Agent has died or fallen off the map
-                    is_dead = True
                 break
         frame_number += 1
         
+        if (not next_state_raw.is_mission_running):
+            next_state = cur_state # TODO examine whether this is valid
+            # TODO: Hack to check if player has reached the goal or not. There are multiple ways to end the mission
+            if(next_state_raw.rewards):
+            # if cur_state[7]: # ISSUE: if player is jumping onto the diamond block, the mission ends but the reward is not given. it's only given via this condition if the agent walks onto the goal block
+                goal_reached = True
+            else:
+                # Agent has died or fallen off the map
+                is_dead = True
+
+        
         episode_time_taken = time.time() - episode_start_time
         if is_dead:
-            next_state = cur_state # TODO examine whether this is valid
-            reward, episode_done = rewardsMap["death"] / episode_time_taken, True
+            reward = rewardsMap["death"] / episode_time_taken
+            episode_done = True
         elif not goal_reached:
             next_state = format_state(next_state_raw)
-            reward, episode_done = calculate_reward(next_state_raw), False
-
+            # reward = 0 if len(next_state_raw.rewards) == 0 else next_state_raw.rewards[-1].getValue()
+            reward = calculate_reward(next_state_raw)
+            episode_done = False
             # Remember previous block. Used in calculate_reward
             global prev_block_below_agent
             prev_block_below_agent = get_block_below_agent(json.loads(next_state_raw.observations[-1].text))
         else:
-            next_state = cur_state
-            reward, episode_done = rewardsMap["goalReached"] / episode_time_taken, True
+            # reward = 0 if len(next_state_raw.rewards) == 0 else next_state_raw.rewards[-1].getValue()
+            reward = rewardsMap["goalReached"]
+            episode_done = True
 
-        # zeroes out the reward that's given for just stepping on the first block (which is automatic, has nothing to do with the model's choices)
-        if reward == rewardsMap["newBlockSteppedOn"] and not has_stepped_on_first_block:
+        if reward != 0 and not has_stepped_on_first_block:
             reward = 0
             has_stepped_on_first_block = True
-        episode_reward += reward
-        
+
         # NOTE: proved that blocks_walked_on updates correctly (at least for a test of first block and jumping to the next block)
         # print(blocks_walked_on)
         # NOTE: proved there is an issue with the way distance_to_nearest_unwalked_block is calculated
@@ -501,30 +550,153 @@ def training_loop(agent_host):
         #     print("CUR STATE:", cur_state)
         #     print("NEXT STATE:", next_state)
         #     print("\n\n")
-        add_entry_to_replay(cur_state, next_state, action, reward)
+        if len(past_states) <= 1:
+            priority = 1.0
+        else:
+            priority = max(past_priorities)
+
+        episode_reward += reward
+        add_entry_to_replay(state=cur_state, next_state=next_state, action=action, reward=reward, done=episode_done, priority=priority)
         
         if frame_number % UPDATE_MODEL_AFTER_N_FRAMES == 0 and frame_number > BATCH_SIZE:
-            random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
-            sampled_states = np.array([past_states[i] for i in random_indices])
-            sampled_next_states = np.array([past_next_states[i] for i in random_indices])
-            sampled_actions = np.array([past_actions[i] for i in random_indices])
-            sampled_rewards = np.array([past_rewards[i] for i in random_indices])
-            
-            # next_state = tf.convert_to_tensor(next_state)
+            normalized_probs = np.divide(past_priorities, np.sum(past_priorities))
+            sampled_transitions = np.random.choice(range(len(past_states)), size=BATCH_SIZE, replace=False, p=normalized_probs)
+
+            sampled_states = np.array([past_states[i] for i in sampled_transitions])
+            sampled_next_states = np.array([past_next_states[i] for i in sampled_transitions])
+            sampled_actions = np.array([past_actions[i] for i in sampled_transitions])
+            sampled_rewards = np.array([past_rewards[i] for i in sampled_transitions])
+            sampled_priorities = np.array([past_priorities[i] for i in sampled_transitions])
+
             predicted_future_rewards = target_model.predict(sampled_next_states, verbose=0) # prints to stdout
             bellman_updated_q_vals = sampled_rewards + GAMMA * tf.reduce_max(predicted_future_rewards, axis=1)
-            action_mask = tf.one_hot(sampled_actions, NUM_ACTIONS)
+            N = len(past_states)
+            for j in range(len(sampled_transitions)):
+                original_index = sampled_transitions[j]
+                max_isw = max(past_isw)
+                p_j_alpha = sampled_priorities[j] ** ALPHA
+                p_alpha_sum = sum([p ** ALPHA for p in past_priorities])
+                isw = ((N * p_j_alpha / p_alpha_sum) ** (-BETA)) / max_isw # line 10
+                td_error = bellman_updated_q_vals[j] - past_rewards[original_index - 1] # line 11
+                past_priorities[original_index] = abs(td_error) # line 12
 
-            with tf.GradientTape() as tape:
-                original_q_vals = model(sampled_states)
-                original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
-                # print(bellman_updated_q_vals, original_q_vals_for_actions)
-                loss = loss_function(bellman_updated_q_vals, original_q_vals_for_actions)
-                # print("Loss:", loss)
-                loss_function_returns.append(loss)
+                # line 13
+                action_mask = tf.one_hot(sampled_actions, NUM_ACTIONS)
+                with tf.GradientTape() as tape:
+                    original_q_vals = model(sampled_states)
+                    original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
+                    expected, actual = [bellman_updated_q_vals[j]], [original_q_vals_for_actions[j]]
+                    loss = loss_function(expected, actual)
+                    loss_function_returns.append(loss)
+
+                grads = tape.gradient(loss, model.trainable_variables)
+                grads = [isw * td_error * grad for grad in grads]
+                optimizer.apply_gradients(zip(grads, model.trainable_variables))
+
+
+
+
+
+
+
+
+
+
+            # random_transitions = random.sample(replay_memory, k=BATCH_SIZE) # samples without replacement
             
-            gradients = tape.gradient(loss, model.trainable_variables)
-            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+            # # random_indices = np.random.choice(range(len(past_states)), size=BATCH_SIZE)
+            # sampled_states = np.array([t[0] for t in random_transitions])
+            # sampled_next_states = np.array([t[1] for t in random_transitions])
+            # sampled_actions = np.array([t[2] for t in random_transitions])
+            # sampled_rewards = np.array([t[3] for t in random_transitions])
+            # sampled_priorities = np.array([t[-2] for t in random_transitions])
+
+            # past_priorities = np.array([t[-2] for t in replay_memory])
+            # past_rewards = np.array([t[3] for t in replay_memory])
+            # past_isw = np.array([tr[-1] for tr in replay_memory])
+
+            # predicted_future_rewards = target_model.predict(sampled_next_states, verbose=0) # prints to stdout
+            # bellman_updated_q_vals = sampled_rewards + GAMMA * tf.reduce_max(predicted_future_rewards, axis=1)
+            # N = len(replay_memory)
+            # for j in range(len(random_transitions)):
+            #     original_index = random_transitions[j]
+            #     max_isw = max(past_isw)
+            #     p_j_alpha = sampled_priorities[j] ** ALPHA
+            #     p_alpha_sum = sum([p ** ALPHA for p in past_priorities])
+            #     isw = ((N * p_j_alpha / p_alpha_sum) ** (-BETA)) / max_isw # line 10
+            #     td_error = bellman_updated_q_vals[j] - past_rewards[original_index - 1] # line 11
+            #     past_priorities[original_index] = abs(td_error) # line 12
+
+            #     # line 13
+            #     action_mask = tf.one_hot(sampled_actions, NUM_ACTIONS)
+            #     with tf.GradientTape() as tape:
+            #         original_q_vals = model(sampled_states)
+            #         original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
+            #         expected, actual = [bellman_updated_q_vals[j]], [original_q_vals_for_actions[j]]
+            #         loss = loss_function(expected, actual)
+            #         loss_function_returns.append(loss)
+
+            #     grads = tape.gradient(loss, model.trainable_variables)
+            #     grads = [isw * td_error * grad for grad in grads]
+            #     optimizer.apply_gradients(zip(grads, model.trainable_variables))
+            
+
+
+
+
+
+            # # next_state = tf.convert_to_tensor(next_state)
+            # predicted_future_rewards = target_model.predict(sampled_next_states, verbose=0) # prints to stdout
+            # bellman_updated_q_vals = sampled_rewards + GAMMA * tf.reduce_max(predicted_future_rewards, axis=1)
+            # action_mask = tf.one_hot(sampled_actions, NUM_ACTIONS)
+
+            # with tf.GradientTape() as tape:
+            #     print(sampled_states)
+            #     original_q_vals = model(sampled_states)
+            #     original_q_vals_for_actions = tf.reduce_sum(tf.multiply(original_q_vals, action_mask), axis=1)
+            #     # print(bellman_updated_q_vals, original_q_vals_for_actions)
+            #     # R + GAMMA * Q(s',a')
+            #     loss = loss_function(bellman_updated_q_vals, original_q_vals_for_actions)
+            #     # print("Loss:", loss)
+            #     loss_function_returns.append(loss)
+            
+            # gradients = tape.gradient(loss, model.trainable_variables)
+            # optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+
+
+            # q_s_values = model(sampled_states)
+            # future_predictions = target_model.predict(sampled_next_states, verbose=0)
+            # k = 0
+            # for tr in random_transitions:
+            #     state, next_state, action, reward, done = tr
+
+            #     q_s = q_s_values[k]
+            #     target = reward + GAMMA * np.amax(future_predictions[k])
+            #     print("target:", target)
+            #     target_f = q_s
+            #     print("target_f:", target_f)
+            #     target_f_list = [n.numpy() for n in target_f]
+            #     print("target f list", target_f_list)
+            #     target_f_list[action] = target
+            #     target_f = tf.constant(target_f_list)
+            #     model.fit(state, target_f, epochs=1, verbose=1)
+
+            #     # with tf.GradientTape() as tape:
+            #     #     q_s_a = q_s_values[k][action].numpy()
+            #     #     print("Q(s,a) =", q_s_a)
+            #     #     q_sprime_aprime = max(future_predictions[k])
+            #     #     target = reward + GAMMA * q_sprime_aprime
+            #     #     print("target =", target)
+            #     #     loss = loss_function(target, q_s_a)
+            #     #     loss_function_returns.append(loss)
+                
+            #     # gradients = tape.gradient(loss, model.trainable_variables)
+            #     # optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+            #     k += 1
+
+
+
         # if ready to update model (% UPDATE_MODEL_AFTER_N_FRAMES == 0)
         # take sample from replay buffers & update q-values
         # update value of episode_done
@@ -545,10 +717,11 @@ def training_loop(agent_host):
             episode_rewards.append(episode_reward)
             episode_reward_running_avgs.append(reward_of_all_episodes / (i+1))
 
-            update_target_model()
+            # update_target_model()
+            target_model.set_weights(model.get_weights())
             if goal_reached:
-                episodes_that_succeeded.append(i)
-            print("Episode reward:", episode_reward, "Average reward:", (reward_of_all_episodes / (i+1)), "Successful episodes:", episodes_that_succeeded)
+                episodes_that_succeeded.append(i+1) # adding 1 since it's 0-indexed
+            print("Episode reward:", episode_reward, "Average reward:", (reward_of_all_episodes / (i+1)), "Successful episodes:", episodes_that_succeeded, "\n")
 
             break
 
@@ -572,8 +745,8 @@ my_mission = MalmoPython.MissionSpec(GetMissionXML(), True)
 # Attempt to start a mission:
 max_retries = 3
 for i in range(NUM_EPISODES):
-    if reward_of_all_episodes / (i+1) > AVERAGE_REWARD_NEEDED_TO_END:
-        print("AI too good")
+    # if reward_of_all_episodes / (i+1) > AVERAGE_REWARD_NEEDED_TO_END:
+    #     print("AI too good")
         # break
 
     print("Episode " + str(i+1) + " of " + str(NUM_EPISODES))
@@ -602,7 +775,7 @@ for i in range(NUM_EPISODES):
             print("Error:",error.text)
 
     print()
-    print("Mission running ", end=' ')
+    print("Mission running")
 
     # testing training loop function
     training_loop(agent_host)
