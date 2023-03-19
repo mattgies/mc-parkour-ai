@@ -10,7 +10,7 @@ import time
 import random
 
 import xmlgen
-import parkourcourse1 as course
+import parkourcourse2 as course
 import observationgrid1 as obsgrid
 from worldClasses import *
 import matplotlib.pyplot as plt
